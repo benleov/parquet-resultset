@@ -8,6 +8,7 @@ import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.avro.AvroSchemaConverter;
 import org.apache.parquet.avro.AvroWriteSupport;
+import org.apache.parquet.hadoop.ParquetFileWriter;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.schema.MessageType;
@@ -16,6 +17,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
@@ -29,7 +31,7 @@ public class ResultSetParquetTransformer {
 
     public static final String DEFAULT_TEMP_FILE_PATH = "/tmp/temp.par";
 
-    private InputStream toParquet(ResultSet resultSet, String schemaName, String namespace,
+    public InputStream toParquet(ResultSet resultSet, String schemaName, String namespace,
                                   List<TransformerListener> listeners) throws IOException, SQLException {
 
         SchemaResults schemaResults = new ResultSetSchemaGenerator().generateSchema(resultSet,
@@ -42,13 +44,13 @@ public class ResultSetParquetTransformer {
         int blockSize = 256 * 1024 * 1024;
         int pageSize = 64 * 1024;
 
-        Path outputPath = new Path(DEFAULT_TEMP_FILE_PATH);
+        java.nio.file.Path tempFile = Files.createTempFile(null, null);
+        Path outputPath = new Path(tempFile.toUri());
 
         final LocalFileSystem localFileSystem = FileSystem.getLocal(new Configuration());
 
-        // TODO: throw custom exception
-        // File file = localFileSystem.pathToFile(outputPath);
-        // file.delete();
+        File file = localFileSystem.pathToFile(outputPath);
+        file.delete();
 
         ParquetWriter parquetWriter = new ParquetWriter(outputPath,
                 writeSupport, compressionCodecName, blockSize, pageSize);
@@ -82,7 +84,7 @@ public class ResultSetParquetTransformer {
     }
 
 
-    private static Object extractResult(SchemaSqlMapping mapping, ResultSet resultSet) throws SQLException {
+    public static Object extractResult(SchemaSqlMapping mapping, ResultSet resultSet) throws SQLException {
 
         switch (mapping.getSqlType()) {
             case Types.BOOLEAN:
