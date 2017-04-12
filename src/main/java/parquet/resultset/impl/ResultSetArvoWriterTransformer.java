@@ -20,7 +20,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -68,9 +67,11 @@ public class ResultSetArvoWriterTransformer implements ResultSetTransformer {
                         ResultSetTransformer.extractResult(mapping, resultSet));
             }
 
-            records.add(builder.build());
+            GenericRecord record = builder.build();
 
-            listeners.forEach(transformerListener -> transformerListener.onRecordParsed(resultSet));
+            records.add(record);
+
+            listeners.forEach(transformerListener -> transformerListener.onRecordParsed(record));
         }
 
         for (GenericRecord record : records) {
@@ -80,8 +81,6 @@ public class ResultSetArvoWriterTransformer implements ResultSetTransformer {
         parquetWriter.close();
 
         File outputFile = localFileSystem.pathToFile(outputPath);
-
-        listeners.forEach(transformerListener -> transformerListener.onComplete(outputFile));
 
         return new FileInputStream(outputFile);
 

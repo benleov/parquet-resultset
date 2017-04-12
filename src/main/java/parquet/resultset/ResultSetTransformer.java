@@ -8,14 +8,32 @@ import java.sql.Types;
 import java.util.List;
 
 /**
- *
+ * Transforms an SQL resultset into Parquet.
  */
 public interface ResultSetTransformer {
 
+    /**
+     *
+     * @param resultSet The resultset to transform.
+     * @param schemaName Schema name.
+     * @param namespace Schema namespace.
+     * @param listeners
+     * @return
+     * @throws IOException
+     * @throws SQLException
+     */
     InputStream toParquet(ResultSet resultSet, String schemaName, String namespace,
-                                 List<TransformerListener> listeners) throws IOException, SQLException;
+                          List<TransformerListener> listeners) throws IOException, SQLException;
 
 
+    /**
+     * Maps SQL types to Schema types.
+     *
+     * @param mapping
+     * @param resultSet
+     * @return
+     * @throws SQLException
+     */
     static Object extractResult(SchemaSqlMapping mapping, ResultSet resultSet) throws SQLException {
 
         switch (mapping.getSqlType()) {

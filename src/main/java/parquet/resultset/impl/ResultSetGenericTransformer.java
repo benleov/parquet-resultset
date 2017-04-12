@@ -56,11 +56,12 @@ public class ResultSetGenericTransformer implements ResultSetTransformer {
                         ResultSetTransformer.extractResult(mapping, resultSet));
             }
 
-            dfw.append(builder.build());
+            GenericRecord record = builder.build();
 
-            listeners.forEach(transformerListener -> transformerListener.onRecordParsed(resultSet));
+            listeners.forEach(transformerListener -> transformerListener.onRecordParsed(record));
+
+            dfw.append(record);
         }
-
 
         dfw.flush();
         dfw.close();

@@ -15,10 +15,10 @@ import java.util.List;
 public class ResultSetSchemaGenerator {
 
     /**
-     * Generates parquet schema from resultset metadata.
+     * Generates parquet schema using {@link ResultSetMetaData }
      *
      * @param resultSet
-     * @param name
+     * @param name Record name.
      * @param nameSpace
      * @return
      * @throws SQLException

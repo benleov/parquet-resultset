@@ -1,16 +1,25 @@
 package parquet.resultset;
 
+import org.apache.avro.generic.GenericRecord;
+
 import java.io.File;
-import java.sql.ResultSet;
 
 /**
  *
  */
 public interface TransformerListener {
 
-    void onRecordParsed(ResultSet resultSet);
+    /**
+     * Called whenever a record parsed.
+     *
+     * @param record The record that was parsed.
+     */
+    void onRecordParsed(GenericRecord record);
 
-    void onComplete(File out);
-
+    /**
+     * Called when the schema is parsed from a {@link java.sql.ResultSet }.
+     *
+     * @param schemaResults The parsed Schema.
+     */
     void onSchemaParsed(SchemaResults schemaResults);
 }

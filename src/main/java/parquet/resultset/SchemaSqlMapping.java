@@ -3,7 +3,7 @@ package parquet.resultset;
 import org.apache.avro.Schema;
 
 /**
- * Mapping between sql column and schema
+ * Mapping between an sql column and schema.
  */
 public class SchemaSqlMapping {
 
@@ -12,6 +12,13 @@ public class SchemaSqlMapping {
     private final int sqlType;
     private final Schema.Type schemaType;
 
+    /**
+     *
+     * @param schemaName
+     * @param sqlColumnName
+     * @param sqlType {@link java.sql.Types }
+     * @param schemaType
+     */
     public SchemaSqlMapping(String schemaName, String sqlColumnName, int sqlType, Schema.Type schemaType) {
         this.schemaName = schemaName;
         this.sqlColumnName = sqlColumnName;
