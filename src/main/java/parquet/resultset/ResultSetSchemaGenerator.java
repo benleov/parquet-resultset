@@ -60,6 +60,8 @@ public class ResultSetSchemaGenerator {
     /**
      * Converts sql column type to schema type. See {@link java.sql.Types } and {@link Schema.Type } for more details.
      *
+     * https://www.cis.upenn.edu/~bcpierce/courses/629/jdkdocs/guide/jdbc/getstart/mapping.doc.html
+     *
      * @param sqlColumnType
      * @return
      */
@@ -69,13 +71,12 @@ public class ResultSetSchemaGenerator {
             case Types.BOOLEAN:
                 return Schema.Type.BOOLEAN;
 
-            case Types.TINYINT:
-            case Types.SMALLINT:
-            case Types.INTEGER:
-            case Types.BIGINT:
-            case Types.ROWID:
-                return Schema.Type.INT;
+            case Types.TINYINT:             // 1 byte
+            case Types.SMALLINT:            // 2 bytes
+            case Types.INTEGER:             // 4 bytes
+                return Schema.Type.INT;     // 32 bit (4 bytes) (signed)
 
+            case Types.ROWID:
             case Types.CHAR:
             case Types.VARCHAR:
             case Types.LONGVARCHAR:
@@ -83,23 +84,24 @@ public class ResultSetSchemaGenerator {
             case Types.NVARCHAR:
             case Types.LONGNVARCHAR:
             case Types.SQLXML:
-                return Schema.Type.STRING;
+                return Schema.Type.STRING;  // unicode string
 
-            case Types.FLOAT:
-                return Schema.Type.FLOAT;
+            case Types.REAL:                // Approximate numerical (mantissa single precision 7)
+                return Schema.Type.FLOAT;   // A 32-bit IEEE single-float
 
-            case Types.REAL:
-            case Types.DOUBLE:
-            case Types.NUMERIC:
-            case Types.DECIMAL:
-                return Schema.Type.DOUBLE;
+            case Types.DOUBLE:              // Approximate numerical (mantissa precision 16)
+            case Types.DECIMAL:             // Exact numerical (5 - 17 bytes)
+            case Types.NUMERIC:             // Exact numerical (5 - 17 bytes)
+            case Types.FLOAT:               // Approximate numerical (mantissa precision 16)
+                return Schema.Type.DOUBLE;  // A 64-bit IEEE double-float
 
             case Types.DATE:
             case Types.TIME:
             case Types.TIMESTAMP:
             case Types.TIME_WITH_TIMEZONE:
             case Types.TIMESTAMP_WITH_TIMEZONE:
-                return Schema.Type.LONG;
+            case Types.BIGINT:              // 8 bytes
+                return Schema.Type.LONG;    // 64 bit (signed)
 
             case Types.BINARY:
             case Types.VARBINARY:
@@ -116,7 +118,7 @@ public class ResultSetSchemaGenerator {
             case Types.DATALINK:
             case Types.NCLOB:
             case Types.REF_CURSOR:
-                return Schema.Type.BYTES;
+                return Schema.Type.BYTES;   // sequence of bytes
         }
 
         return null;
