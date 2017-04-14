@@ -1,3 +1,4 @@
+import com.google.common.collect.Lists;
 import org.apache.avro.file.DataFileReader;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumReader;
@@ -63,7 +64,7 @@ public class ResultSetParquetTransformerTest {
     @Before
     public void before() throws Exception {
 
-        Boolean[] nextReturns = new Boolean[ID_VALUES.length + 1]; 
+        Boolean[] nextReturns = new Boolean[ID_VALUES.length + 1];
         Arrays.fill(nextReturns, Boolean.TRUE);
         nextReturns[nextReturns.length - 1] = false; // set last value to false
 
@@ -102,20 +103,30 @@ public class ResultSetParquetTransformerTest {
 
         List<TransformerListener> listeners = new ArrayList<>();
 
+        class Results {
+            List<Integer> parsed = new ArrayList<>();
+            boolean schemaParsedCalled = false;
+        }
+
+        final Results results = new Results();
+
         listeners.add(new TransformerListener() {
             @Override
             public void onRecordParsed(GenericRecord record) {
-                System.out.println("RECORD PARSED " + record.get(ID_FIELD_NAME));
+                results.parsed.add((Integer)record.get(ID_FIELD_NAME));
             }
 
             @Override
             public void onSchemaParsed(SchemaResults schemaResults) {
-
+                results.schemaParsedCalled = true;
             }
         });
 
         ResultSetTransformer transformer = new ResultSetGenericTransformer();
         InputStream inputStream = transformer.toParquet(resultSet, SCHEMA_NAME, NAMESPACE, listeners);
+
+        assertTrue(results.schemaParsedCalled);
+        assertEquals(Arrays.asList(ID_VALUES), results.parsed);
 
     }
 
