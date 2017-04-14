@@ -18,6 +18,7 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static junit.framework.TestCase.assertEquals;
@@ -58,8 +59,10 @@ public class ResultSetParquetTransformerTest {
         ResultSet resultSet = mock(ResultSet.class);
         ResultSetMetaData metaData = mock(ResultSetMetaData.class);
 
-        when(resultSet.next()).thenReturn(true, true, true, true, false); // return true for first next call
-        when(resultSet.getInt(ID_FIELD_NAME)).thenReturn(0, 1, 2, 3, 4 );
+        Integer[] idValues = {0, 1, 2, 3, 4, 5, 6};
+
+        when(resultSet.next()).thenReturn(true, true, true, true, false); // return true four times then false
+        when(resultSet.getInt(ID_FIELD_NAME)).thenReturn(idValues[0], Arrays.copyOfRange(idValues, 1, idValues.length));
 
         when(resultSet.getMetaData()).thenReturn(metaData);
 
@@ -77,7 +80,7 @@ public class ResultSetParquetTransformerTest {
 
         try {
             IOUtils.copy(inputStream, new FileOutputStream(testOutput));
-            validate(testOutput);
+            validate(testOutput, ID_FIELD_NAME, idValues);
         } finally {
             testOutput.delete();
         }
@@ -90,7 +93,7 @@ public class ResultSetParquetTransformerTest {
      *
      * @throws IOException
      */
-    private void validate(File file) throws IOException {
+    private void validate(File file, String fieldName, Integer... expectedValues) throws IOException {
 
         DatumReader<GenericRecord> reader = new GenericDatumReader<>();
         DataFileReader<GenericRecord> fileReader = new DataFileReader<>(file, reader);
@@ -104,7 +107,7 @@ public class ResultSetParquetTransformerTest {
             recordsRead = true;
 
             fileReader.next(record);
-            assertEquals(x++, record.get(ID_FIELD_NAME));
+            assertEquals(expectedValues[x++], record.get(fieldName));
         }
 
         assertTrue("No records were read from file.", recordsRead);
