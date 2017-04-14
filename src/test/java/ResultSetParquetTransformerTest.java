@@ -4,8 +4,11 @@ import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.DatumReader;
 import org.apache.commons.io.IOUtils;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import parquet.resultset.ResultSetTransformer;
+import parquet.resultset.SchemaResults;
 import parquet.resultset.TransformerListener;
 import parquet.resultset.impl.ResultSetGenericTransformer;
 
@@ -49,48 +52,78 @@ public class ResultSetParquetTransformerTest {
 
     private static final String ID_FIELD_NAME = "id";
     private static final String TEMP_FILE_NAME = "unit_test.tmp";
+    private static final String SCHEMA_NAME = "SchemaName";
+    private static final String NAMESPACE = "org.NAMESPACE";
+    private static final Integer[] ID_VALUES = {0, 1, 2, 3, 4, 5, 6};
 
-    @Test
-    public void testToParquet() throws IOException, SQLException {
+    private ResultSet resultSet = mock(ResultSet.class);
+    private ResultSetMetaData metaData = mock(ResultSetMetaData.class);
 
-        String schemaName = "SchemaName";
-        String namespace = "org.namespace";
 
-        ResultSet resultSet = mock(ResultSet.class);
-        ResultSetMetaData metaData = mock(ResultSetMetaData.class);
+    @Before
+    public void before() throws Exception {
 
-        Integer[] idValues = {0, 1, 2, 3, 4, 5, 6};
+        Boolean[] nextReturns = new Boolean[ID_VALUES.length + 1]; 
+        Arrays.fill(nextReturns, Boolean.TRUE);
+        nextReturns[nextReturns.length - 1] = false; // set last value to false
 
-        when(resultSet.next()).thenReturn(true, true, true, true, false); // return true four times then false
-        when(resultSet.getInt(ID_FIELD_NAME)).thenReturn(idValues[0], Arrays.copyOfRange(idValues, 1, idValues.length));
-
+        when(resultSet.next()).thenReturn(nextReturns[0], Arrays.copyOfRange(nextReturns, 1, nextReturns.length));
+        when(resultSet.getInt(ID_FIELD_NAME)).thenReturn(ID_VALUES[0], Arrays.copyOfRange(ID_VALUES, 1, ID_VALUES.length));
         when(resultSet.getMetaData()).thenReturn(metaData);
 
         // mock metadata so schema is created
         when(metaData.getColumnCount()).thenReturn(1);
         when(metaData.getColumnName(1)).thenReturn(ID_FIELD_NAME);
         when(metaData.getColumnType(1)).thenReturn(Types.INTEGER);
+    }
+
+    @After
+    public void after() {
+        File testOutput = new File(TEMP_FILE_NAME);
+        testOutput.delete();
+    }
+
+    @Test
+    public void testToParquetResultFile() throws IOException, SQLException {
 
         List<TransformerListener> listeners = new ArrayList<>();
 
         ResultSetTransformer transformer = new ResultSetGenericTransformer();
-        InputStream inputStream = transformer.toParquet(resultSet, schemaName, namespace, listeners);
+        InputStream inputStream = transformer.toParquet(resultSet, SCHEMA_NAME, NAMESPACE, listeners);
 
         File testOutput = new File(TEMP_FILE_NAME);
 
-        try {
-            IOUtils.copy(inputStream, new FileOutputStream(testOutput));
-            validate(testOutput, ID_FIELD_NAME, idValues);
-        } finally {
-            testOutput.delete();
-        }
+        IOUtils.copy(inputStream, new FileOutputStream(testOutput));
+        validate(testOutput, ID_FIELD_NAME, ID_VALUES);
     }
+
+    @Test
+    public void testToParquetListeners() throws IOException, SQLException {
+
+        List<TransformerListener> listeners = new ArrayList<>();
+
+        listeners.add(new TransformerListener() {
+            @Override
+            public void onRecordParsed(GenericRecord record) {
+                System.out.println("RECORD PARSED " + record.get(ID_FIELD_NAME));
+            }
+
+            @Override
+            public void onSchemaParsed(SchemaResults schemaResults) {
+
+            }
+        });
+
+        ResultSetTransformer transformer = new ResultSetGenericTransformer();
+        InputStream inputStream = transformer.toParquet(resultSet, SCHEMA_NAME, NAMESPACE, listeners);
+
+    }
+
 
     /**
      * Validates produced parquet file.
      *
      * @param file The file to validate.
-     *
      * @throws IOException
      */
     private void validate(File file, String fieldName, Integer... expectedValues) throws IOException {
