@@ -2,7 +2,7 @@
 
 The parquet-resultset library can be used to convert a standard SQL 
 [ResultSet](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html) into 
-[parquet](https://parquet.apache.org/). 
+[Parquet](https://parquet.apache.org/), or  [Arvo](https://avro.apache.org/)
 
 For example
 
@@ -33,7 +33,8 @@ For example
 
         });
 
-        ResultSetTransformer transformer = new ResultSetGenericTransformer();
+        ResultSetTransformer transformer = new ResultSetParquetTransformer();
+        // or new ResultSetArvoTransformer()
         InputStream inputStream = transformer.toParquet(resultSet, schemaName, namespace, listeners); 
         
 ```

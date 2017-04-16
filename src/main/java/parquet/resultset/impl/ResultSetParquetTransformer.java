@@ -6,6 +6,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.parquet.avro.AvroParquetWriter;
 import org.apache.parquet.avro.AvroSchemaConverter;
 import org.apache.parquet.avro.AvroWriteSupport;
 import org.apache.parquet.hadoop.ParquetWriter;
@@ -26,22 +27,18 @@ import java.util.List;
 /**
  *
  */
-public class ResultSetArvoWriterTransformer implements ResultSetTransformer {
+public class ResultSetParquetTransformer implements ResultSetTransformer {
 
-    public InputStream toParquet(ResultSet resultSet, String schemaName, String namespace,
-                                  List<TransformerListener> listeners) throws IOException, SQLException {
+    public InputStream transform(ResultSet resultSet, String schemaName, String namespace,
+                                 List<TransformerListener> listeners) throws IOException, SQLException {
 
         SchemaResults schemaResults = new ResultSetSchemaGenerator().generateSchema(resultSet,
                 schemaName, namespace);
 
         listeners.forEach(transformerListener -> transformerListener.onSchemaParsed(schemaResults));
 
-        MessageType parquetSchema = new AvroSchemaConverter().convert(schemaResults.getParsedSchema());
-        AvroWriteSupport writeSupport = new AvroWriteSupport(parquetSchema, schemaResults.getParsedSchema());
-        CompressionCodecName compressionCodecName = CompressionCodecName.SNAPPY;
-
-        int blockSize = 256 * 1024 * 1024;
-        int pageSize = 64 * 1024;
+//        MessageType parquetSchema = new AvroSchemaConverter().convert(schemaResults.getParsedSchema());
+//        AvroWriteSupport writeSupport = new AvroWriteSupport(parquetSchema, schemaResults.getParsedSchema());
 
         java.nio.file.Path tempFile = Files.createTempFile(null, null);
         Path outputPath = new Path(tempFile.toUri());
@@ -51,8 +48,13 @@ public class ResultSetArvoWriterTransformer implements ResultSetTransformer {
         File file = localFileSystem.pathToFile(outputPath);
         file.delete();
 
-        ParquetWriter parquetWriter = new ParquetWriter(outputPath,
-                writeSupport, compressionCodecName, blockSize, pageSize);
+        ParquetWriter parquetWriter = AvroParquetWriter.builder(outputPath)
+                .withSchema(schemaResults.getParsedSchema())
+                .withCompressionCodec(CompressionCodecName.SNAPPY)
+                .build();
+
+//        AvroParquetWriter parquetWriter = new AvroParquetWriter(outputPath,
+//                writeSupport, compressionCodecName, blockSize, pageSize);
 
         List<GenericRecord> records = new ArrayList<>();
 

@@ -8,7 +8,7 @@ import java.sql.Types;
 import java.util.List;
 
 /**
- * Transforms an SQL ResultSet into Parquet.
+ * Transforms an SQL ResultSet into another format.
  */
 public interface ResultSetTransformer {
 
@@ -17,11 +17,11 @@ public interface ResultSetTransformer {
      * @param schemaName Schema name.
      * @param namespace  Schema namespace.
      * @param listeners
-     * @return InputStream containing the parsed Parquet data.
+     * @return InputStream containing the transformed data.
      * @throws IOException
      * @throws SQLException
      */
-    InputStream toParquet(ResultSet resultSet, String schemaName, String namespace,
+    InputStream transform(ResultSet resultSet, String schemaName, String namespace,
                           List<TransformerListener> listeners) throws IOException, SQLException;
 
 

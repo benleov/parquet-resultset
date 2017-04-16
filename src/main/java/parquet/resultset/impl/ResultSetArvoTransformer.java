@@ -5,31 +5,23 @@ import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
 import org.apache.avro.io.DatumWriter;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.LocalFileSystem;
-import org.apache.hadoop.fs.Path;
-import org.apache.parquet.avro.AvroSchemaConverter;
-import org.apache.parquet.avro.AvroWriteSupport;
-import org.apache.parquet.hadoop.ParquetWriter;
-import org.apache.parquet.hadoop.metadata.CompressionCodecName;
-import org.apache.parquet.schema.MessageType;
 import parquet.resultset.*;
 
-import java.io.*;
-import java.nio.file.Files;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
  *
  */
-public class ResultSetGenericTransformer implements ResultSetTransformer {
+public class ResultSetArvoTransformer implements ResultSetTransformer {
 
-    public InputStream toParquet(ResultSet resultSet, String schemaName, String namespace,
-                                  List<TransformerListener> listeners) throws IOException, SQLException {
+    public InputStream transform(ResultSet resultSet, String schemaName, String namespace,
+                                 List<TransformerListener> listeners) throws IOException, SQLException {
 
         SchemaResults schemaResults = new ResultSetSchemaGenerator().generateSchema(resultSet,
                 schemaName, namespace);
