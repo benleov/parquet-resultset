@@ -1,7 +1,8 @@
 # parquet-resultset
 
-The parquet-resultset library can be used to convert standard sql result sets 
-into [parquet](https://parquet.apache.org/). 
+The parquet-resultset library can be used to convert a standard SQL 
+[ResultSet](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html) into 
+[parquet](https://parquet.apache.org/). 
 
 For example
 
@@ -16,6 +17,21 @@ For example
         
         // here listeners can be added which will be notified when records are parsed
         List<TransformerListener> listeners = new ArrayList<>();
+
+        listeners.add(new TransformerListener() {
+        
+            @Override
+            public void onSchemaParsed(SchemaResults schemaResults) {
+
+                // called when the schema is parsed
+            }
+            
+            @Override
+            public void onRecordParsed(GenericRecord record) {
+                // called whenever a record/row is parsed
+            }
+
+        });
 
         ResultSetTransformer transformer = new ResultSetGenericTransformer();
         InputStream inputStream = transformer.toParquet(resultSet, schemaName, namespace, listeners); 
