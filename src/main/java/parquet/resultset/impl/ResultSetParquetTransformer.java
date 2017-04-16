@@ -37,9 +37,6 @@ public class ResultSetParquetTransformer implements ResultSetTransformer {
 
         listeners.forEach(transformerListener -> transformerListener.onSchemaParsed(schemaResults));
 
-//        MessageType parquetSchema = new AvroSchemaConverter().convert(schemaResults.getParsedSchema());
-//        AvroWriteSupport writeSupport = new AvroWriteSupport(parquetSchema, schemaResults.getParsedSchema());
-
         java.nio.file.Path tempFile = Files.createTempFile(null, null);
         Path outputPath = new Path(tempFile.toUri());
 
@@ -52,10 +49,7 @@ public class ResultSetParquetTransformer implements ResultSetTransformer {
                 .withSchema(schemaResults.getParsedSchema())
                 .withCompressionCodec(CompressionCodecName.SNAPPY)
                 .build();
-
-//        AvroParquetWriter parquetWriter = new AvroParquetWriter(outputPath,
-//                writeSupport, compressionCodecName, blockSize, pageSize);
-
+        
         List<GenericRecord> records = new ArrayList<>();
 
         while (resultSet.next()) {
