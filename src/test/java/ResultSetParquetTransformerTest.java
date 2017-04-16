@@ -106,6 +106,8 @@ public class ResultSetParquetTransformerTest {
         class Results {
             List<Integer> parsed = new ArrayList<>();
             boolean schemaParsedCalled = false;
+            boolean idFieldParsed = false;
+            int sqlMappingSize;
         }
 
         final Results results = new Results();
@@ -118,7 +120,10 @@ public class ResultSetParquetTransformerTest {
 
             @Override
             public void onSchemaParsed(SchemaResults schemaResults) {
+
                 results.schemaParsedCalled = true;
+                results.idFieldParsed = schemaResults.getParsedSchema().getField(ID_FIELD_NAME) != null;
+                results.sqlMappingSize = schemaResults.getMappings().size();
             }
         });
 
@@ -126,6 +131,9 @@ public class ResultSetParquetTransformerTest {
         InputStream inputStream = transformer.toParquet(resultSet, SCHEMA_NAME, NAMESPACE, listeners);
 
         assertTrue(results.schemaParsedCalled);
+        assertTrue(results.idFieldParsed);
+        assertEquals(1, results.sqlMappingSize);
+
         assertEquals(Arrays.asList(ID_VALUES), results.parsed);
 
     }
