@@ -21,11 +21,11 @@ public class SchemaResults {
         this.parsedSchema = parsedSchema;
     }
 
-    public void setMappings(List<SchemaSqlMapping> mappings) {
-        this.mappings = mappings;
-    }
-
     public List<SchemaSqlMapping> getMappings() {
         return mappings;
+    }
+
+    public void setMappings(List<SchemaSqlMapping> mappings) {
+        this.mappings = mappings;
     }
 }

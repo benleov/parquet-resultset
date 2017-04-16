@@ -10,7 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- *
+ * Parses a {@link ResultSet } and generates {@link SchemaResults } which contains the mappings of sql columns
+ * to Schema fields.
  */
 public class ResultSetSchemaGenerator {
 

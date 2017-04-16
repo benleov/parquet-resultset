@@ -8,17 +8,16 @@ import java.sql.Types;
 import java.util.List;
 
 /**
- * Transforms an SQL resultset into Parquet.
+ * Transforms an SQL ResultSet into Parquet.
  */
 public interface ResultSetTransformer {
 
     /**
-     *
-     * @param resultSet The resultset to transform.
+     * @param resultSet  The resultset to transform.
      * @param schemaName Schema name.
-     * @param namespace Schema namespace.
+     * @param namespace  Schema namespace.
      * @param listeners
-     * @return
+     * @return InputStream containing the parsed Parquet data.
      * @throws IOException
      * @throws SQLException
      */
@@ -27,7 +26,7 @@ public interface ResultSetTransformer {
 
 
     /**
-     * Maps SQL types to Schema types.
+     * Extracts the appropriate value from the ResultSet using the given SchemaSqlMapping.
      *
      * @param mapping
      * @param resultSet

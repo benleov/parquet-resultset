@@ -128,13 +128,16 @@ public class ResultSetParquetTransformerTest {
         });
 
         ResultSetTransformer transformer = new ResultSetGenericTransformer();
-        InputStream inputStream = transformer.toParquet(resultSet, SCHEMA_NAME, NAMESPACE, listeners);
 
-        assertTrue(results.schemaParsedCalled);
-        assertTrue(results.idFieldParsed);
-        assertEquals(1, results.sqlMappingSize);
+        try(InputStream inputStream = transformer.toParquet(resultSet, SCHEMA_NAME, NAMESPACE, listeners)) {
 
-        assertEquals(Arrays.asList(ID_VALUES), results.parsed);
+            assertTrue(results.schemaParsedCalled);
+            assertTrue(results.idFieldParsed);
+            assertEquals(1, results.sqlMappingSize);
+
+            assertEquals(Arrays.asList(ID_VALUES), results.parsed);
+            
+        }
 
     }
 

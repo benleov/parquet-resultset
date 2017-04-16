@@ -5,6 +5,7 @@ import org.apache.avro.generic.GenericRecord;
 import java.io.File;
 
 /**
+ * Called when a {@link ResultSetTransformer } parses a ResultSet.
  *
  */
 public interface TransformerListener {
