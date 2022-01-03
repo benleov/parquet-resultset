@@ -22,7 +22,6 @@ For example
         
             @Override
             public void onSchemaParsed(SchemaResults schemaResults) {
-
                 // called when the schema is parsed
             }
             
@@ -30,7 +29,6 @@ For example
             public void onRecordParsed(GenericRecord record) {
                 // called whenever a record/row is parsed
             }
-
         });
 
         ResultSetTransformer transformer = new ResultSetParquetTransformer();
@@ -39,5 +37,15 @@ For example
         
 ```
 
-The input stream can the be written out to file, or, for example, to S3, which can then be queried by 
+The input stream can be written out to anywhere, i.e a file or S3, which can then be queried by 
 [Athena](https://aws.amazon.com/athena/).
+
+## Building
+
+```
+./gradlew build
+```
+
+## License
+
+This project is Open Source software released under the https://www.apache.org/licenses/LICENSE-2.0.html[Apache 2.0 license].
