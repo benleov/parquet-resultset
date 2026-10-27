@@ -23,6 +23,8 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -125,6 +127,7 @@ public interface ResultSetTransformer {
      *     <li>local-timestamp-millis: {@link java.time.LocalDateTime}</li>
      *     <li>timestamp-millis: {@link Instant}</li>
      *     <li>bytes: {@link ByteBuffer}</li>
+     *     <li>array: {@link List} of the element type, which may contain nulls</li>
      *     <li>otherwise Boolean, Integer, Long, Float, Double or String</li>
      * </ul>
      *
@@ -182,6 +185,10 @@ public interface ResultSetTransformer {
                     byte[] bytes = resultSet.getBytes(column);
                     value = bytes != null ? ByteBuffer.wrap(bytes) : null;
                     break;
+                case ARRAY:
+                    java.sql.Array array = resultSet.getArray(column);
+                    value = array != null ? toList(array, fieldSchema.getElementType(), mapping) : null;
+                    break;
                 default:
                     value = resultSet.getString(column);
             }
@@ -189,6 +196,74 @@ public interface ResultSetTransformer {
 
         // primitive getters return 0 or false for SQL NULL, so check wasNull to keep it null
         return resultSet.wasNull() ? null : value;
+    }
+
+    /**
+     * Converts the elements of an sql array into the element type of the schema, a union of the type and null.
+     */
+    private static List<Object> toList(java.sql.Array array, Schema elementSchema, SchemaSqlMapping mapping)
+            throws SQLException {
+
+        Schema.Type elementType = elementSchema.getTypes().get(0).getType();
+
+        try {
+            // drivers may return arrays of primitives, e.g. int[], so read it with reflection
+            Object elements = array.getArray();
+            int length = java.lang.reflect.Array.getLength(elements);
+            List<Object> list = new ArrayList<>(length);
+
+            for (int x = 0; x < length; x++) {
+                list.add(toArrayElement(java.lang.reflect.Array.get(elements, x), elementType, mapping));
+            }
+
+            return list;
+
+        } finally {
+            try {
+                array.free();
+            } catch (SQLException e) {
+                // not supported by all drivers, and the array is released with the result set anyway
+            }
+        }
+    }
+
+    private static Object toArrayElement(Object element, Schema.Type elementType, SchemaSqlMapping mapping)
+            throws SQLException {
+
+        if (element == null) {
+            return null;
+        }
+
+        if (elementType == Schema.Type.STRING) {
+            if (element.getClass().isArray()) {
+                // an element of a multi dimensional array, e.g. "[1, 2]"
+                String nested = Arrays.deepToString(new Object[]{element});
+                return nested.substring(1, nested.length() - 1);
+            }
+            return element.toString();
+        }
+
+        if (elementType == Schema.Type.BOOLEAN && element instanceof Boolean) {
+            return element;
+        }
+
+        if (element instanceof Number) {
+            Number number = (Number) element;
+
+            switch (elementType) {
+                case INT:
+                    return number.intValue();
+                case LONG:
+                    return number.longValue();
+                case FLOAT:
+                    return number.floatValue();
+                case DOUBLE:
+                    return number.doubleValue();
+            }
+        }
+
+        throw new SQLException("Array element " + element + " (" + element.getClass().getName() + ") in column "
+                + mapping.getSqlColumnName() + " cannot be written as " + elementType);
     }
 
     /**
