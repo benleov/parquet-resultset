@@ -1,5 +1,6 @@
 package parquet.resultset;
 
+import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
 
 import java.sql.ResultSet;
@@ -7,13 +8,22 @@ import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * Parses a {@link ResultSet } and generates {@link SchemaResults } which contains the mappings of sql columns
  * to Schema fields.
  */
 public class ResultSetSchemaGenerator {
+
+    /**
+     * Largest decimal precision written as a decimal logical type. Larger or unknown precisions are written as
+     * doubles. 38 is the maximum supported by Athena, Hive and Spark.
+     */
+    public static final int MAX_DECIMAL_PRECISION = 38;
 
     /**
      * Generates parquet schema using {@link ResultSetMetaData }
@@ -37,18 +47,25 @@ public class ResultSetSchemaGenerator {
 
             ResultSetMetaData resultSetMetaData = resultSet.getMetaData();
             int columnCount = resultSetMetaData.getColumnCount();
+            Set<String> usedNames = new HashSet<>();
 
             for (int x = 1; x <= columnCount; x++) {
 
-                String columnName = resultSetMetaData.getColumnName(x);
+                // the label is the "AS" alias, which drivers return as the column name when there is none
+                String columnName = resultSetMetaData.getColumnLabel(x);
+
+                if (columnName == null || columnName.isEmpty()) {
+                    columnName = resultSetMetaData.getColumnName(x);
+                }
+
                 int sqlColumnType = resultSetMetaData.getColumnType(x);
                 int precision = resultSetMetaData.getPrecision(x);
                 int scale = resultSetMetaData.getScale(x);
-                String schemaName = columnName.toLowerCase();
+                String schemaName = uniqueName(toFieldName(columnName), usedNames);
 
-                Schema.Type schemaType = parseSchemaType(sqlColumnType, precision, scale);
-                mappings.add(new SchemaSqlMapping(schemaName, columnName, sqlColumnType, schemaType));
-                fields.add(createNullableField(recordSchema, schemaName, schemaType));
+                Schema fieldSchema = parseFieldSchema(sqlColumnType, precision, scale);
+                mappings.add(new SchemaSqlMapping(x, schemaName, columnName, sqlColumnType, fieldSchema));
+                fields.add(createNullableField(recordSchema, schemaName, fieldSchema));
             }
         }
 
@@ -61,8 +78,135 @@ public class ResultSetSchemaGenerator {
     }
 
     /**
-     * Converts sql column type to schema type, using the column's precision and scale to map whole number
-     * NUMERIC and DECIMAL columns (e.g. NUMERIC(9)) to INT or LONG rather than DOUBLE.
+     * Converts an sql column name into a valid schema field name: lower case, with characters that are not
+     * allowed in a field name (anything other than letters, digits and underscores) replaced by underscores,
+     * and an underscore prefix when it would otherwise start with a digit. e.g. "COUNT(*)" becomes "count___".
+     *
+     * @param columnName The sql column name or label.
+     * @return
+     */
+    public String toFieldName(String columnName) {
+
+        String lowerCase = columnName == null ? "" : columnName.toLowerCase(Locale.ROOT);
+        StringBuilder fieldName = new StringBuilder(lowerCase.length() + 1);
+
+        for (char c : lowerCase.toCharArray()) {
+            boolean valid = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+            fieldName.append(valid ? c : '_');
+        }
+
+        if (fieldName.length() == 0 || Character.isDigit(fieldName.charAt(0))) {
+            fieldName.insert(0, '_');
+        }
+
+        return fieldName.toString();
+    }
+
+    /**
+     * Appends _2, _3 etc. to the name when it has already been used, e.g. for the two "id" columns of a join.
+     */
+    private static String uniqueName(String name, Set<String> usedNames) {
+
+        String uniqueName = name;
+
+        for (int suffix = 2; !usedNames.add(uniqueName); suffix++) {
+            uniqueName = name + "_" + suffix;
+        }
+
+        return uniqueName;
+    }
+
+    /**
+     * Converts sql column type to the schema of a field, including any logical type:
+     *
+     * <ul>
+     *     <li>NUMERIC and DECIMAL whole numbers (scale 0) to INT (precision up to 9) or LONG (up to 18),
+     *     otherwise a decimal with the same precision and scale. Doubles are used when the precision is unknown
+     *     (e.g. oracle NUMBER, postgres numeric) or above {@link #MAX_DECIMAL_PRECISION}.</li>
+     *     <li>DATE to date, TIME to time-millis, TIMESTAMP to local-timestamp-millis (no time zone) and
+     *     TIMESTAMP_WITH_TIMEZONE to timestamp-millis (a UTC instant).</li>
+     *     <li>Binary types and BLOB to BYTES, and BIT to BOOLEAN when it is a single bit.</li>
+     *     <li>Everything else, including CLOB, OTHER (e.g. postgres uuid and json) and ARRAY, to STRING.</li>
+     * </ul>
+     *
+     * @param sqlColumnType {@link java.sql.Types }
+     * @param precision     column precision from {@link ResultSetMetaData#getPrecision(int)}
+     * @param scale         column scale from {@link ResultSetMetaData#getScale(int)}
+     * @return
+     */
+    public Schema parseFieldSchema(int sqlColumnType, int precision, int scale) {
+
+        switch (sqlColumnType) {
+
+            case Types.BOOLEAN:
+                return Schema.create(Schema.Type.BOOLEAN);
+
+            case Types.BIT:                 // BIT(1) is a boolean, e.g. sql server bit and mysql TINYINT(1)
+                return Schema.create(precision <= 1 ? Schema.Type.BOOLEAN : Schema.Type.BYTES);
+
+            case Types.TINYINT:             // 1 byte
+            case Types.SMALLINT:            // 2 bytes
+            case Types.INTEGER:             // 4 bytes
+                return Schema.create(Schema.Type.INT);      // 32 bit (4 bytes) (signed)
+
+            case Types.BIGINT:              // 8 bytes
+                return Schema.create(Schema.Type.LONG);     // 64 bit (signed)
+
+            case Types.REAL:                // Approximate numerical (mantissa single precision 7)
+                return Schema.create(Schema.Type.FLOAT);    // A 32-bit IEEE single-float
+
+            case Types.DOUBLE:              // Approximate numerical (mantissa precision 16)
+            case Types.FLOAT:               // Approximate numerical (mantissa precision 16)
+                return Schema.create(Schema.Type.DOUBLE);   // A 64-bit IEEE double-float
+
+            case Types.DECIMAL:             // Exact numerical (5 - 17 bytes)
+            case Types.NUMERIC:             // Exact numerical (5 - 17 bytes)
+                return parseDecimalSchema(precision, scale);
+
+            case Types.DATE:
+                return LogicalTypes.date().addToSchema(Schema.create(Schema.Type.INT));
+
+            case Types.TIME:
+            case Types.TIME_WITH_TIMEZONE:
+                return LogicalTypes.timeMillis().addToSchema(Schema.create(Schema.Type.INT));
+
+            case Types.TIMESTAMP:
+                return LogicalTypes.localTimestampMillis().addToSchema(Schema.create(Schema.Type.LONG));
+
+            case Types.TIMESTAMP_WITH_TIMEZONE:
+                return LogicalTypes.timestampMillis().addToSchema(Schema.create(Schema.Type.LONG));
+
+            case Types.BINARY:
+            case Types.VARBINARY:
+            case Types.LONGVARBINARY:
+            case Types.BLOB:
+                return Schema.create(Schema.Type.BYTES);    // sequence of bytes
+
+            default:                        // character types, CLOB, SQLXML, ROWID, OTHER, ARRAY etc.
+                return Schema.create(Schema.Type.STRING);   // unicode string
+        }
+    }
+
+    private static Schema parseDecimalSchema(int precision, int scale) {
+
+        if (scale == 0 && precision > 0 && precision <= 9) {
+            return Schema.create(Schema.Type.INT);          // up to 999,999,999 fits in a 32 bit int
+        }
+
+        if (scale == 0 && precision > 0 && precision <= 18) {
+            return Schema.create(Schema.Type.LONG);         // up to 18 digits fits in a 64 bit long
+        }
+
+        if (precision > 0 && precision <= MAX_DECIMAL_PRECISION && scale >= 0 && scale <= precision) {
+            return LogicalTypes.decimal(precision, scale).addToSchema(Schema.create(Schema.Type.BYTES));
+        }
+
+        return Schema.create(Schema.Type.DOUBLE);
+    }
+
+    /**
+     * Converts sql column type to schema type, using the column's precision and scale. See
+     * {@link #parseFieldSchema(int, int, int)} for the full mapping, including logical types.
      *
      * @param sqlColumnType {@link java.sql.Types }
      * @param precision     column precision from {@link ResultSetMetaData#getPrecision(int)}
@@ -70,17 +214,7 @@ public class ResultSetSchemaGenerator {
      * @return
      */
     public Schema.Type parseSchemaType(int sqlColumnType, int precision, int scale) {
-
-        if ((sqlColumnType == Types.NUMERIC || sqlColumnType == Types.DECIMAL) && scale == 0 && precision > 0) {
-            if (precision <= 9) {
-                return Schema.Type.INT;     // up to 999,999,999 fits in a 32 bit int
-            }
-            if (precision <= 18) {
-                return Schema.Type.LONG;    // up to 18 digits fits in a 64 bit long
-            }
-        }
-
-        return parseSchemaType(sqlColumnType);
+        return parseFieldSchema(sqlColumnType, precision, scale).getType();
     }
 
     /**
@@ -92,62 +226,7 @@ public class ResultSetSchemaGenerator {
      * @return
      */
     public Schema.Type parseSchemaType(int sqlColumnType) {
-        switch (sqlColumnType) {
-
-            case Types.BOOLEAN:
-                return Schema.Type.BOOLEAN;
-
-            case Types.TINYINT:             // 1 byte
-            case Types.SMALLINT:            // 2 bytes
-            case Types.INTEGER:             // 4 bytes
-                return Schema.Type.INT;     // 32 bit (4 bytes) (signed)
-
-            case Types.ROWID:
-            case Types.CHAR:
-            case Types.VARCHAR:
-            case Types.LONGVARCHAR:
-            case Types.NCHAR:
-            case Types.NVARCHAR:
-            case Types.LONGNVARCHAR:
-            case Types.SQLXML:
-                return Schema.Type.STRING;  // unicode string
-
-            case Types.REAL:                // Approximate numerical (mantissa single precision 7)
-                return Schema.Type.FLOAT;   // A 32-bit IEEE single-float
-
-            case Types.DOUBLE:              // Approximate numerical (mantissa precision 16)
-            case Types.DECIMAL:             // Exact numerical (5 - 17 bytes)
-            case Types.NUMERIC:             // Exact numerical (5 - 17 bytes)
-            case Types.FLOAT:               // Approximate numerical (mantissa precision 16)
-                return Schema.Type.DOUBLE;  // A 64-bit IEEE double-float
-
-            case Types.DATE:
-            case Types.TIME:
-            case Types.TIMESTAMP:
-            case Types.TIME_WITH_TIMEZONE:
-            case Types.TIMESTAMP_WITH_TIMEZONE:
-            case Types.BIGINT:              // 8 bytes
-                return Schema.Type.LONG;    // 64 bit (signed)
-
-            case Types.BINARY:
-            case Types.VARBINARY:
-            case Types.LONGVARBINARY:
-            case Types.NULL:
-            case Types.OTHER:
-            case Types.JAVA_OBJECT:
-            case Types.DISTINCT:
-            case Types.STRUCT:
-            case Types.ARRAY:
-            case Types.BLOB:
-            case Types.CLOB:
-            case Types.REF:
-            case Types.DATALINK:
-            case Types.NCLOB:
-            case Types.REF_CURSOR:
-                return Schema.Type.BYTES;   // sequence of bytes
-        }
-
-        return null;
+        return parseSchemaType(sqlColumnType, 0, 0);
     }
 
 
@@ -160,16 +239,27 @@ public class ResultSetSchemaGenerator {
      * @return
      */
     public Schema.Field createNullableField(Schema recordSchema, String columnName, Schema.Type type) {
+        return createNullableField(recordSchema, columnName, Schema.create(type));
+    }
 
-        Schema intSchema = Schema.create(type);
+    /**
+     * Creates field that can be null {@link Schema#createUnion(List)}
+     *
+     * @param recordSchema The root record schema
+     * @param columnName   The schema column name
+     * @param fieldSchema  Schema for this field, which may have a logical type
+     * @return
+     */
+    public Schema.Field createNullableField(Schema recordSchema, String columnName, Schema fieldSchema) {
+
         Schema nullSchema = Schema.create(Schema.Type.NULL);
 
         List<Schema> fieldSchemas = new ArrayList<>();
-        fieldSchemas.add(intSchema);
+        fieldSchemas.add(fieldSchema);
         fieldSchemas.add(nullSchema);
 
-        Schema fieldSchema = recordSchema.createUnion(fieldSchemas);
+        Schema unionSchema = Schema.createUnion(fieldSchemas);
 
-        return new Schema.Field(columnName, fieldSchema, null, null);
+        return new Schema.Field(columnName, unionSchema, null, null);
     }
 }

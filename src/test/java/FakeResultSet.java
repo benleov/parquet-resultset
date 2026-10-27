@@ -2,12 +2,16 @@ import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.Timestamp;
+import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
 
 /**
  * Creates a {@link ResultSet} over in memory rows that behaves like a JDBC driver: primitive getters return 0 or
- * false for NULL and {@link ResultSet#wasNull()} reports whether the last value read was NULL.
+ * false for NULL and {@link ResultSet#wasNull()} reports whether the last value read was NULL. Columns can be read
+ * by index or by label.
  */
 public final class FakeResultSet {
 
@@ -16,8 +20,9 @@ public final class FakeResultSet {
 
     /**
      * @param metaData    Metadata returned by {@link ResultSet#getMetaData()}.
-     * @param columnNames Column names, in the same order as the values in each row.
-     * @param rows        Row values, null for SQL NULL.
+     * @param columnNames Column labels, in the same order as the values in each row.
+     * @param rows        Row values, null for SQL NULL. A {@link Timestamp} in a TIMESTAMP_WITH_TIMEZONE column
+     *                    makes getObject(column, OffsetDateTime.class) unsupported, as with older drivers.
      */
     public static ResultSet create(ResultSetMetaData metaData, String[] columnNames, List<Object[]> rows) {
 
@@ -39,9 +44,9 @@ public final class FakeResultSet {
                             return null;
                     }
 
-                    int column = columns.indexOf(args[0]);
+                    int column = args[0] instanceof Integer ? (Integer) args[0] - 1 : columns.indexOf(args[0]);
 
-                    if (column < 0) {
+                    if (column < 0 || column >= columns.size()) {
                         throw new IllegalArgumentException("Unknown column " + args[0]);
                     }
 
@@ -51,8 +56,6 @@ public final class FakeResultSet {
                     switch (method.getName()) {
                         case "getBoolean":
                             return value != null && (Boolean) value;
-                        case "getByte":
-                            return value == null ? (byte) 0 : ((Number) value).byteValue();
                         case "getInt":
                             return value == null ? 0 : ((Number) value).intValue();
                         case "getLong":
@@ -65,9 +68,17 @@ public final class FakeResultSet {
                             return value == null ? null : new BigDecimal(value.toString());
                         case "getString":
                             return value == null ? null : value.toString();
+                        case "getBytes":
                         case "getDate":
                         case "getTime":
+                            return value;
                         case "getTimestamp":
+                            return value instanceof OffsetDateTime
+                                    ? Timestamp.from(((OffsetDateTime) value).toInstant()) : value;
+                        case "getObject":
+                            if (value instanceof Timestamp) {
+                                throw new SQLFeatureNotSupportedException("getObject(int, Class)");
+                            }
                             return value;
                     }
 
