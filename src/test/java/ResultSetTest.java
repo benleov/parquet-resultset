@@ -105,10 +105,17 @@ public abstract class ResultSetTest {
             {"empty_array_col", Types.ARRAY, 0, 0, new Integer[0], Collections.emptyList(), "_int4"},
             {"varbinary_col", Types.VARBINARY, 0, 0, new byte[]{1, 2, 3}, ByteBuffer.wrap(new byte[]{1, 2, 3})},
             {"blob_col", Types.BLOB, 0, 0, new byte[]{4, 5}, ByteBuffer.wrap(new byte[]{4, 5})},
-            {"date_col", Types.DATE, 0, 0, Date.valueOf("2017-12-31"), LocalDate.of(2017, 12, 31)},
-            {"time_col", Types.TIME, 0, 0, new Time(Time.valueOf("13:45:30").getTime() + 123),
+            // read with getObject(column, LocalDate.class) etc.
+            {"date_col", Types.DATE, 0, 0, LocalDate.of(2017, 12, 31), LocalDate.of(2017, 12, 31)},
+            {"time_col", Types.TIME, 0, 0, LocalTime.of(13, 45, 30, 123_000_000),
                     LocalTime.of(13, 45, 30, 123_000_000)},
-            {"timestamp_col", Types.TIMESTAMP, 0, 0, Timestamp.valueOf("2015-12-31 08:30:00.123"),
+            {"timestamp_col", Types.TIMESTAMP, 0, 0, LocalDateTime.of(2015, 12, 31, 8, 30, 0, 123_000_000),
+                    LocalDateTime.of(2015, 12, 31, 8, 30, 0, 123_000_000)},
+            // read with getDate, getTime and getTimestamp when the driver doesn't support getObject(column, Class)
+            {"date_old_col", Types.DATE, 0, 0, Date.valueOf("2017-12-31"), LocalDate.of(2017, 12, 31)},
+            {"time_old_col", Types.TIME, 0, 0, new Time(Time.valueOf("13:45:30").getTime() + 123),
+                    LocalTime.of(13, 45, 30, 123_000_000)},
+            {"timestamp_old_col", Types.TIMESTAMP, 0, 0, Timestamp.valueOf("2015-12-31 08:30:00.123"),
                     LocalDateTime.of(2015, 12, 31, 8, 30, 0, 123_000_000)},
             {"timestamptz_col", Types.TIMESTAMP_WITH_TIMEZONE, 0, 0,
                     OffsetDateTime.of(2015, 12, 31, 8, 30, 0, 0, ZoneOffset.ofHours(10)),
@@ -358,7 +365,7 @@ public abstract class ResultSetTest {
     /**
      * Avro reads strings back as Utf8, including in arrays, so convert them to Strings.
      */
-    private static Object normalise(Object value) {
+    protected static Object normalise(Object value) {
 
         if (value instanceof CharSequence) {
             return value.toString();
