@@ -2,7 +2,7 @@
 
 The parquet-resultset library can be used to convert a standard SQL 
 [ResultSet](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html) into 
-[Parquet](https://parquet.apache.org/), or  [Arvo](https://avro.apache.org/)
+[Parquet](https://parquet.apache.org/), or  [Avro](https://avro.apache.org/)
 
 For example
 
@@ -32,14 +32,71 @@ For example
         });
 
         ResultSetTransformer transformer = new ResultSetParquetTransformer();
-        // or new ResultSetArvoTransformer()
-        InputStream inputStream = transformer.transform(resultSet, mySchemaName, namespace, listeners); 
+        // or new ResultSetAvroTransformer()
+
+        // write directly to a file, S3 upload stream etc. The stream is flushed but not closed.
+        try (OutputStream outputStream = Files.newOutputStream(Paths.get("widget.parquet"))) {
+            transformer.transform(resultSet, mySchemaName, namespace, listeners, outputStream);
+        }
         
 ```
 
-The input stream can be written out to anywhere, i.e a file or S3, which can then be queried by 
-[Athena](https://aws.amazon.com/athena/). Close the stream when done: the parquet transformer writes to a temp
-file, which is deleted when the stream is closed.
+The output can be written out to anywhere, i.e a file or S3, which can then be queried by 
+[Athena](https://aws.amazon.com/athena/). Only the current row (and for parquet, the current row group) is held
+in memory.
+
+`transform` can also return an `InputStream` instead, without the listeners if they are not needed. It writes to
+a temp file, which is deleted when the stream is closed:
+
+``` java
+        try (InputStream inputStream = transformer.transform(resultSet, mySchemaName, namespace)) {
+            // read the transformed data
+        }
+```
+
+## Options
+
+``` java
+        // compression codec (default SNAPPY) and row group size in bytes (default 128MB)
+        new ResultSetParquetTransformer(CompressionCodecName.ZSTD, 64 * 1024 * 1024);
+
+        // compression codec (default none)
+        new ResultSetAvroTransformer(CodecFactory.snappyCodec());
+```
+
+## Type mapping
+
+Every field is nullable. SQL NULLs are written as nulls, including for numeric and boolean columns.
+
+| SQL type | Avro / Parquet type |
+| --- | --- |
+| BOOLEAN, BIT | boolean (BIT(n) with more than one bit: bytes) |
+| TINYINT, SMALLINT, INTEGER | int |
+| BIGINT | long |
+| REAL | float |
+| FLOAT, DOUBLE | double |
+| NUMERIC, DECIMAL with scale 0 | int up to precision 9, long up to 18, then decimal |
+| NUMERIC, DECIMAL with a scale | decimal with the column's precision and scale |
+| NUMERIC, DECIMAL with unknown precision (e.g. Oracle `NUMBER`, Postgres `numeric`) or above 38 | double |
+| DATE | date |
+| TIME, TIME_WITH_TIMEZONE | time-millis |
+| TIMESTAMP | local-timestamp-millis (no time zone) |
+| TIMESTAMP_WITH_TIMEZONE | timestamp-millis (UTC) |
+| BINARY, VARBINARY, LONGVARBINARY, BLOB | bytes |
+| Everything else, e.g. CHAR, VARCHAR, CLOB, SQLXML, OTHER (Postgres `uuid`, `json`), ARRAY | string |
+
+Field names are the column labels (the `AS` alias), lower cased. Characters other than letters, digits and
+underscores are replaced with underscores, e.g. `COUNT(*)` becomes `count___`, and repeated names (e.g. the `id`
+columns of a join) get a suffix: `id`, `id_2`.
+
+Records passed to listeners hold decimals, dates and times as `BigDecimal` and `java.time` values. To read them
+back the same way, use `ResultSetTransformer.dataModel()`:
+
+``` java
+        new GenericDatumReader<GenericRecord>(null, null, ResultSetTransformer.dataModel());
+
+        AvroParquetReader.<GenericRecord>builder(inputFile).withDataModel(ResultSetTransformer.dataModel());
+```
 
 ## Building
 
