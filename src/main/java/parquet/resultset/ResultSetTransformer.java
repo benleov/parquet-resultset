@@ -26,7 +26,8 @@ public interface ResultSetTransformer {
 
 
     /**
-     * Extracts the appropriate value from the ResultSet using the given SchemaSqlMapping.
+     * Extracts the appropriate value from the ResultSet using the given SchemaSqlMapping. The returned value
+     * matches the mapping's schema type, or is null when the column is SQL NULL.
      *
      * @param mapping
      * @param resultSet
@@ -35,15 +36,22 @@ public interface ResultSetTransformer {
      */
     static Object extractResult(SchemaSqlMapping mapping, ResultSet resultSet) throws SQLException {
 
+        String columnName = mapping.getSqlColumnName();
+        Object value;
+
         switch (mapping.getSqlType()) {
             case Types.BOOLEAN:
-                return resultSet.getBoolean(mapping.getSqlColumnName());
+                value = resultSet.getBoolean(columnName);
+                break;
             case Types.TINYINT:
             case Types.SMALLINT:
             case Types.INTEGER:
+                value = resultSet.getInt(columnName);
+                break;
             case Types.BIGINT:
+                value = resultSet.getLong(columnName);
+                break;
             case Types.ROWID:
-                return resultSet.getInt(mapping.getSqlColumnName());
             case Types.CHAR:
             case Types.VARCHAR:
             case Types.LONGVARCHAR:
@@ -51,24 +59,43 @@ public interface ResultSetTransformer {
             case Types.NVARCHAR:
             case Types.LONGNVARCHAR:
             case Types.SQLXML:
-                return resultSet.getString(mapping.getSqlColumnName());
+                value = resultSet.getString(columnName);
+                break;
             case Types.REAL:
+                value = resultSet.getFloat(columnName);
+                break;
             case Types.FLOAT:
-                return resultSet.getFloat(mapping.getSqlColumnName());
             case Types.DOUBLE:
-                return resultSet.getDouble(mapping.getSqlColumnName());
+                value = resultSet.getDouble(columnName);
+                break;
             case Types.NUMERIC:
-                return resultSet.getBigDecimal(mapping.getSqlColumnName());
             case Types.DECIMAL:
-                return resultSet.getBigDecimal(mapping.getSqlColumnName());
+                // read using the type chosen by ResultSetSchemaGenerator#parseSchemaType(int, int, int)
+                switch (mapping.getSchemaType()) {
+                    case INT:
+                        value = resultSet.getInt(columnName);
+                        break;
+                    case LONG:
+                        value = resultSet.getLong(columnName);
+                        break;
+                    default:
+                        value = resultSet.getDouble(columnName);
+                }
+                break;
             case Types.DATE:
-                return resultSet.getDate(mapping.getSqlColumnName()).getTime();
+                java.sql.Date date = resultSet.getDate(columnName);
+                value = date != null ? date.getTime() : null;
+                break;
             case Types.TIME:
             case Types.TIME_WITH_TIMEZONE:
-                return resultSet.getTime(mapping.getSqlColumnName()).getTime();
+                java.sql.Time time = resultSet.getTime(columnName);
+                value = time != null ? time.getTime() : null;
+                break;
             case Types.TIMESTAMP:
             case Types.TIMESTAMP_WITH_TIMEZONE:
-                return resultSet.getTimestamp(mapping.getSqlColumnName()).getTime();
+                java.sql.Timestamp timestamp = resultSet.getTimestamp(columnName);
+                value = timestamp != null ? timestamp.getTime() : null;
+                break;
             case Types.BINARY:
             case Types.VARBINARY:
             case Types.LONGVARBINARY:
@@ -84,9 +111,13 @@ public interface ResultSetTransformer {
             case Types.DATALINK:
             case Types.NCLOB:
             case Types.REF_CURSOR:
-                return resultSet.getByte(mapping.getSqlColumnName());
+                value = resultSet.getByte(columnName);
+                break;
             default:
-                return resultSet.getString(mapping.getSqlColumnName());
+                value = resultSet.getString(columnName);
         }
+
+        // primitive getters return 0 or false for SQL NULL, so check wasNull to keep it null
+        return resultSet.wasNull() ? null : value;
     }
 }
