@@ -2,26 +2,20 @@ package parquet.resultset.impl;
 
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.LocalFileSystem;
-import org.apache.hadoop.fs.Path;
 import org.apache.parquet.avro.AvroParquetWriter;
-import org.apache.parquet.avro.AvroSchemaConverter;
-import org.apache.parquet.avro.AvroWriteSupport;
+import org.apache.parquet.hadoop.ParquetFileWriter;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
-import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.io.LocalOutputFile;
 import parquet.resultset.*;
 
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -37,50 +31,39 @@ public class ResultSetParquetTransformer implements ResultSetTransformer {
 
         listeners.forEach(transformerListener -> transformerListener.onSchemaParsed(schemaResults));
 
-        java.nio.file.Path tempFile = Files.createTempFile(null, null);
-        Path outputPath = new Path(tempFile.toUri());
+        // written through the local file system directly, so hadoop's winutils is not needed on windows
+        Path tempFile = Files.createTempFile(null, ".parquet");
 
-        final LocalFileSystem localFileSystem = FileSystem.getLocal(new Configuration());
-
-        File file = localFileSystem.pathToFile(outputPath);
-        file.delete();
-
-        ParquetWriter parquetWriter = AvroParquetWriter.builder(outputPath)
+        try (ParquetWriter<GenericRecord> parquetWriter = AvroParquetWriter
+                .<GenericRecord>builder(new LocalOutputFile(tempFile))
                 .withSchema(schemaResults.getParsedSchema())
                 .withCompressionCodec(CompressionCodecName.SNAPPY)
-                .build();
-        
-        List<GenericRecord> records = new ArrayList<>();
+                .withWriteMode(ParquetFileWriter.Mode.OVERWRITE)
+                .build()) {
 
-        while (resultSet.next()) {
+            while (resultSet.next()) {
 
-            GenericRecordBuilder builder = new GenericRecordBuilder(schemaResults.getParsedSchema());
+                GenericRecordBuilder builder = new GenericRecordBuilder(schemaResults.getParsedSchema());
 
-            for (SchemaSqlMapping mapping : schemaResults.getMappings()) {
+                for (SchemaSqlMapping mapping : schemaResults.getMappings()) {
 
-                builder.set(
-                        schemaResults.getParsedSchema().getField(mapping.getSchemaName()),
-                        ResultSetTransformer.extractResult(mapping, resultSet));
+                    builder.set(
+                            schemaResults.getParsedSchema().getField(mapping.getSchemaName()),
+                            ResultSetTransformer.extractResult(mapping, resultSet));
+                }
+
+                GenericRecord record = builder.build();
+
+                listeners.forEach(transformerListener -> transformerListener.onRecordParsed(record));
+
+                parquetWriter.write(record);
             }
-
-            GenericRecord record = builder.build();
-
-            records.add(record);
-
-            listeners.forEach(transformerListener -> transformerListener.onRecordParsed(record));
+        } catch (IOException | SQLException | RuntimeException e) {
+            Files.deleteIfExists(tempFile);
+            throw e;
         }
 
-        for (GenericRecord record : records) {
-            parquetWriter.write(record);
-        }
-
-        parquetWriter.close();
-
-        File outputFile = localFileSystem.pathToFile(outputPath);
-
-        return new FileInputStream(outputFile);
-
+        // the temp file is removed once the caller closes the stream
+        return Files.newInputStream(tempFile, StandardOpenOption.DELETE_ON_CLOSE);
     }
-
-
 }
