@@ -42,9 +42,11 @@ public class ResultSetSchemaGenerator {
 
                 String columnName = resultSetMetaData.getColumnName(x);
                 int sqlColumnType = resultSetMetaData.getColumnType(x);
+                int precision = resultSetMetaData.getPrecision(x);
+                int scale = resultSetMetaData.getScale(x);
                 String schemaName = columnName.toLowerCase();
 
-                Schema.Type schemaType = parseSchemaType(sqlColumnType);
+                Schema.Type schemaType = parseSchemaType(sqlColumnType, precision, scale);
                 mappings.add(new SchemaSqlMapping(schemaName, columnName, sqlColumnType, schemaType));
                 fields.add(createNullableField(recordSchema, schemaName, schemaType));
             }
@@ -56,6 +58,29 @@ public class ResultSetSchemaGenerator {
         schemaResults.setParsedSchema(recordSchema);
 
         return schemaResults;
+    }
+
+    /**
+     * Converts sql column type to schema type, using the column's precision and scale to map whole number
+     * NUMERIC and DECIMAL columns (e.g. NUMERIC(9)) to INT or LONG rather than DOUBLE.
+     *
+     * @param sqlColumnType {@link java.sql.Types }
+     * @param precision     column precision from {@link ResultSetMetaData#getPrecision(int)}
+     * @param scale         column scale from {@link ResultSetMetaData#getScale(int)}
+     * @return
+     */
+    public Schema.Type parseSchemaType(int sqlColumnType, int precision, int scale) {
+
+        if ((sqlColumnType == Types.NUMERIC || sqlColumnType == Types.DECIMAL) && scale == 0 && precision > 0) {
+            if (precision <= 9) {
+                return Schema.Type.INT;     // up to 999,999,999 fits in a 32 bit int
+            }
+            if (precision <= 18) {
+                return Schema.Type.LONG;    // up to 18 digits fits in a 64 bit long
+            }
+        }
+
+        return parseSchemaType(sqlColumnType);
     }
 
     /**
