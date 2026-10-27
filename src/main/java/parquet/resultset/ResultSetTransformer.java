@@ -22,6 +22,9 @@ import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -150,17 +153,13 @@ public interface ResultSetTransformer {
             value = decimal != null ? decimal.setScale(scale, RoundingMode.HALF_UP) : null;
 
         } else if (logicalType instanceof LogicalTypes.Date) {
-            java.sql.Date date = resultSet.getDate(column);
-            value = date != null ? date.toLocalDate() : null;
+            value = getLocalDate(resultSet, column);
 
         } else if (logicalType instanceof LogicalTypes.TimeMillis) {
-            Time time = resultSet.getTime(column);
-            // Time#toLocalTime drops the milliseconds, so go through Timestamp to keep them
-            value = time != null ? new Timestamp(time.getTime()).toLocalDateTime().toLocalTime() : null;
+            value = getLocalTime(resultSet, column);
 
         } else if (logicalType instanceof LogicalTypes.LocalTimestampMillis) {
-            Timestamp timestamp = resultSet.getTimestamp(column);
-            value = timestamp != null ? timestamp.toLocalDateTime() : null;
+            value = getLocalDateTime(resultSet, column);
 
         } else if (logicalType instanceof LogicalTypes.TimestampMillis) {
             value = getInstant(resultSet, column);
@@ -265,6 +264,44 @@ public interface ResultSetTransformer {
 
         throw new SQLException("Array element " + element + " (" + element.getClass().getName() + ") in column "
                 + mapping.getSqlColumnName() + " cannot be written as " + elementType);
+    }
+
+    /*
+     * DATE, TIME and TIMESTAMP are read as java.time values (JDBC 4.2), which don't depend on the JVM's time zone.
+     * The java.sql types go through it, so e.g. a TIMESTAMP in the hour skipped when daylight saving starts in that
+     * zone is moved an hour later. Drivers that don't support getObject(column, Class) fall back to the java.sql
+     * getters.
+     */
+
+    private static LocalDate getLocalDate(ResultSet resultSet, int column) throws SQLException {
+
+        try {
+            return resultSet.getObject(column, LocalDate.class);
+        } catch (SQLException e) {
+            java.sql.Date date = resultSet.getDate(column);
+            return date != null ? date.toLocalDate() : null;
+        }
+    }
+
+    private static LocalTime getLocalTime(ResultSet resultSet, int column) throws SQLException {
+
+        try {
+            return resultSet.getObject(column, LocalTime.class);
+        } catch (SQLException e) {
+            Time time = resultSet.getTime(column);
+            // Time#toLocalTime drops the milliseconds, so go through Timestamp to keep them
+            return time != null ? new Timestamp(time.getTime()).toLocalDateTime().toLocalTime() : null;
+        }
+    }
+
+    private static LocalDateTime getLocalDateTime(ResultSet resultSet, int column) throws SQLException {
+
+        try {
+            return resultSet.getObject(column, LocalDateTime.class);
+        } catch (SQLException e) {
+            Timestamp timestamp = resultSet.getTimestamp(column);
+            return timestamp != null ? timestamp.toLocalDateTime() : null;
+        }
     }
 
     /**

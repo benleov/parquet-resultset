@@ -67,7 +67,9 @@ a temp file, which is deleted when the stream is closed:
 
 ## Type mapping
 
-Every field is nullable. SQL NULLs are written as nulls, including for numeric and boolean columns.
+Every field is nullable. SQL NULLs are written as nulls, including for numeric and boolean columns. Dates, times
+and timestamps are read as `java.time` values when the driver supports it (JDBC 4.2), so they don't depend on the
+JVM's time zone, e.g. a timestamp in the hour skipped when daylight saving starts isn't moved an hour later.
 
 | SQL type | Avro / Parquet type |
 | --- | --- |

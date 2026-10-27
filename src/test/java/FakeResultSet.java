@@ -22,8 +22,9 @@ public final class FakeResultSet {
     /**
      * @param metaData    Metadata returned by {@link ResultSet#getMetaData()}.
      * @param columnNames Column labels, in the same order as the values in each row.
-     * @param rows        Row values, null for SQL NULL. A {@link Timestamp} in a TIMESTAMP_WITH_TIMEZONE column
-     *                    makes getObject(column, OffsetDateTime.class) unsupported, as with older drivers.
+     * @param rows        Row values, null for SQL NULL. getObject(column, Class) returns values of that class
+     *                    and is otherwise unsupported, as with older drivers, e.g. a {@link java.sql.Date} can only
+     *                    be read with getDate.
      */
     public static ResultSet create(ResultSetMetaData metaData, String[] columnNames, List<Object[]> rows) {
 
@@ -79,7 +80,7 @@ public final class FakeResultSet {
                             return value instanceof OffsetDateTime
                                     ? Timestamp.from(((OffsetDateTime) value).toInstant()) : value;
                         case "getObject":
-                            if (value instanceof Timestamp) {
+                            if (value != null && !((Class<?>) args[1]).isInstance(value)) {
                                 throw new SQLFeatureNotSupportedException("getObject(int, Class)");
                             }
                             return value;
