@@ -42,10 +42,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class H2IntegrationTest {
 
     /**
-     * Daylight saving starts in Melbourne at 2am, so 2:30am doesn't exist in that zone. The test JVM runs in it, see
+     * Daylight saving starts in New York at 2am, so 2:30am doesn't exist in that zone. The test JVM runs in it, see
      * build.gradle.
      */
-    private static final LocalDateTime SKIPPED_HOUR = LocalDateTime.of(2026, 10, 4, 2, 30, 0, 123_000_000);
+    private static final LocalDateTime SKIPPED_HOUR = LocalDateTime.of(2026, 3, 8, 2, 30, 0, 123_000_000);
 
     private static final String QUERY = "SELECT id AS widget_id, flag, big, price, ratio, name, data, day_col, "
             + "time_col, created, created_tz, ids, tags FROM widget ORDER BY id";
@@ -65,7 +65,7 @@ public class H2IntegrationTest {
                     + "ids INTEGER ARRAY, tags VARCHAR(10) ARRAY)");
 
             statement.execute("INSERT INTO widget VALUES (1, TRUE, 10000000000, 12.5, 0.25, 'widget', X'010203', "
-                    + "DATE '2026-10-04', TIME '13:45:30.123', TIMESTAMP '2026-10-04 02:30:00.123', "
+                    + "DATE '2026-03-08', TIME '13:45:30.123', TIMESTAMP '2026-03-08 02:30:00.123', "
                     + "TIMESTAMP WITH TIME ZONE '2026-01-02 03:04:05.678+10:00', ARRAY[1, NULL, 3], ARRAY['a', 'b'])");
 
             statement.execute("INSERT INTO widget (id) VALUES (2)");
@@ -133,7 +133,7 @@ public class H2IntegrationTest {
         assertEquals(0.25d, values.get("ratio"));
         assertEquals("widget", ResultSetTest.normalise(values.get("name")));
         assertEquals(ByteBuffer.wrap(new byte[]{1, 2, 3}), values.get("data"));
-        assertEquals(LocalDate.of(2026, 10, 4), values.get("day_col"));
+        assertEquals(LocalDate.of(2026, 3, 8), values.get("day_col"));
         assertEquals(LocalTime.of(13, 45, 30, 123_000_000), values.get("time_col"));
         assertEquals(SKIPPED_HOUR, values.get("created"));
         assertEquals(Instant.parse("2026-01-01T17:04:05.678Z"), values.get("created_tz"));

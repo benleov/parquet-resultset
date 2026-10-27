@@ -47,5 +47,5 @@ test {
     // load mockito as an agent rather than self-attaching, which newer JDKs warn about
     jvmArgs "-javaagent:${configurations.mockitoAgent.asPath}"
     // a zone with daylight saving, so H2IntegrationTest can read a TIMESTAMP in the skipped hour
-    systemProperty 'user.timezone', 'Australia/Melbourne'
+    systemProperty 'user.timezone', 'America/New_York'
 }
