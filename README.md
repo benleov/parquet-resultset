@@ -33,14 +33,17 @@ For example
 
         ResultSetTransformer transformer = new ResultSetParquetTransformer();
         // or new ResultSetArvoTransformer()
-        InputStream inputStream = transformer.toParquet(resultSet, schemaName, namespace, listeners); 
+        InputStream inputStream = transformer.transform(resultSet, mySchemaName, namespace, listeners); 
         
 ```
 
 The input stream can be written out to anywhere, i.e a file or S3, which can then be queried by 
-[Athena](https://aws.amazon.com/athena/).
+[Athena](https://aws.amazon.com/athena/). Close the stream when done: the parquet transformer writes to a temp
+file, which is deleted when the stream is closed.
 
 ## Building
+
+Using the library requires Java 11 or later. Building it requires JDK 17 or later (for Gradle 9).
 
 ```
 ./gradlew build

@@ -1,19 +1,48 @@
-version '1.0-SNAPSHOT'
+plugins {
+    id 'java-library'
+}
 
-apply plugin: 'java'
-
-sourceCompatibility = 1.8
+version = '1.0-SNAPSHOT'
 
 repositories {
     mavenCentral()
-    jcenter()
+}
+
+configurations {
+    mockitoAgent
+}
+
+java {
+    // parquet-java 1.15+ and mockito 5 require Java 11
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 11
 }
 
 dependencies {
-    implementation  group: 'org.apache.parquet', name: 'parquet-avro', version: '1.8.1'
-    implementation  group: 'org.apache.hadoop', name: 'hadoop-common', version: '2.7.3'
+    api 'org.apache.parquet:parquet-avro:1.18.1'
+    api 'org.apache.avro:avro:1.12.2'
 
-    testImplementation  group: 'junit', name: 'junit', version: '4.12'
-    testImplementation  group: 'org.apache.commons', name: 'commons-io', version: '1.3.2'
-    testImplementation  group: 'org.mockito', name: 'mockito-core', version: '2.+'
+    // parquet-hadoop declares hadoop as provided, so it must be added here. 3.5+ requires Java 17.
+    implementation 'org.apache.hadoop:hadoop-client-api:3.4.3'
+    runtimeOnly 'org.apache.hadoop:hadoop-client-runtime:3.4.3'
+
+    testImplementation platform('org.junit:junit-bom:5.14.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.junit.jupiter:junit-jupiter-params'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'commons-io:commons-io:2.22.0'
+    testImplementation 'org.mockito:mockito-core:5.24.0'
+    mockitoAgent('org.mockito:mockito-core:5.24.0') {
+        transitive = false
+    }
+}
+
+test {
+    useJUnitPlatform()
+    // load mockito as an agent rather than self-attaching, which newer JDKs warn about
+    jvmArgs "-javaagent:${configurations.mockitoAgent.asPath}"
 }
