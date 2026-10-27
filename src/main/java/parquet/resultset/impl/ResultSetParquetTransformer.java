@@ -4,6 +4,7 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.parquet.avro.AvroParquetWriter;
+import org.apache.parquet.avro.AvroWriteSupport;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 
@@ -53,6 +54,8 @@ public class ResultSetParquetTransformer extends AbstractResultSetTransformer {
                 .withDataModel(dataModel)
                 .withCompressionCodec(compressionCodec)
                 .withRowGroupSize(rowGroupSize)
+                // the standard 3 level list structure, which allows null array elements
+                .config(AvroWriteSupport.WRITE_OLD_LIST_STRUCTURE, "false")
                 .build();
 
         return new RecordWriter() {

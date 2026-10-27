@@ -12,6 +12,7 @@ import java.sql.JDBCType;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Types;
 import java.util.Arrays;
 import java.util.List;
@@ -19,6 +20,7 @@ import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -41,6 +43,7 @@ public class ResultSetSchemaGeneratorTest {
 
         // mock metadata so schema is created
         when(metaData.getColumnCount()).thenReturn(6);
+        when(metaData.isSigned(anyInt())).thenReturn(true);
         when(metaData.getColumnName(1)).thenReturn("id");
         when(metaData.getColumnType(1)).thenReturn(Types.INTEGER);
 
@@ -182,7 +185,7 @@ public class ResultSetSchemaGeneratorTest {
             "BIGINT, LONG",
             "ROWID, STRING", "CHAR, STRING", "VARCHAR, STRING", "LONGVARCHAR, STRING",
             "NCHAR, STRING", "NVARCHAR, STRING", "LONGNVARCHAR, STRING", "SQLXML, STRING",
-            "CLOB, STRING", "NCLOB, STRING", "OTHER, STRING", "ARRAY, STRING", "STRUCT, STRING",
+            "CLOB, STRING", "NCLOB, STRING", "OTHER, STRING", "ARRAY, ARRAY", "STRUCT, STRING",
             "JAVA_OBJECT, STRING", "DISTINCT, STRING", "DATALINK, STRING", "NULL, STRING",
             "REAL, FLOAT",
             "DOUBLE, DOUBLE", "FLOAT, DOUBLE", "DECIMAL, DOUBLE", "NUMERIC, DOUBLE",
@@ -239,6 +242,77 @@ public class ResultSetSchemaGeneratorTest {
         assertNull(logicalType(Types.NUMERIC, 9, 0));
         assertNull(logicalType(Types.NUMERIC, 0, 0));
         assertNull(logicalType(Types.VARCHAR, 0, 0));
+    }
+
+    @Test
+    public void testUnsignedColumns() {
+
+        // unsigned TINYINT and SMALLINT still fit in an int
+        assertEquals(Schema.create(Schema.Type.INT), generator.parseFieldSchema(Types.TINYINT, 3, 0, false, null));
+        assertEquals(Schema.create(Schema.Type.INT), generator.parseFieldSchema(Types.SMALLINT, 5, 0, false, null));
+        assertEquals(Schema.create(Schema.Type.LONG), generator.parseFieldSchema(Types.INTEGER, 10, 0, false, null));
+        assertEquals(LogicalTypes.decimal(20, 0),
+                generator.parseFieldSchema(Types.BIGINT, 20, 0, false, null).getLogicalType());
+
+        assertEquals(Schema.create(Schema.Type.INT), generator.parseFieldSchema(Types.INTEGER, 10, 0, true, null));
+        assertEquals(Schema.create(Schema.Type.LONG), generator.parseFieldSchema(Types.BIGINT, 19, 0, true, null));
+    }
+
+    @Test
+    public void testGenerateSchemaUnsignedAndArrays() throws SQLException {
+
+        ResultSet resultSet = mock(ResultSet.class);
+        ResultSetMetaData metaData = mock(ResultSetMetaData.class);
+        when(resultSet.getMetaData()).thenReturn(metaData);
+
+        when(metaData.getColumnCount()).thenReturn(4);
+        when(metaData.getColumnLabel(1)).thenReturn("unsigned_id");
+        when(metaData.getColumnType(1)).thenReturn(Types.INTEGER);
+        when(metaData.isSigned(1)).thenReturn(false);
+
+        // drivers that can't say are assumed signed
+        when(metaData.getColumnLabel(2)).thenReturn("id");
+        when(metaData.getColumnType(2)).thenReturn(Types.BIGINT);
+        when(metaData.isSigned(2)).thenThrow(new SQLFeatureNotSupportedException());
+
+        when(metaData.getColumnLabel(3)).thenReturn("tags");
+        when(metaData.getColumnType(3)).thenReturn(Types.ARRAY);
+        when(metaData.getColumnTypeName(3)).thenReturn("_text");
+
+        when(metaData.getColumnLabel(4)).thenReturn("scores");
+        when(metaData.getColumnType(4)).thenReturn(Types.ARRAY);
+        when(metaData.getColumnTypeName(4)).thenReturn("_int8");
+
+        List<SchemaSqlMapping> mappings = generator.generateSchema(resultSet, "SchemaName", null).getMappings();
+
+        assertEquals(Schema.Type.LONG, mappings.get(0).getSchemaType());
+        assertEquals(Schema.Type.LONG, mappings.get(1).getSchemaType());
+        assertEquals(Schema.createArray(Schema.createUnion(Schema.create(Schema.Type.STRING),
+                Schema.create(Schema.Type.NULL))), mappings.get(2).getFieldSchema());
+        assertEquals(Schema.createArray(Schema.createUnion(Schema.create(Schema.Type.LONG),
+                Schema.create(Schema.Type.NULL))), mappings.get(3).getFieldSchema());
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {
+            // postgres
+            "_int2, INT", "_int4, INT", "_int8, LONG", "_float4, FLOAT", "_float8, DOUBLE", "_numeric, DOUBLE",
+            "_bool, BOOLEAN", "_text, STRING", "_varchar, STRING", "_uuid, STRING", "_date, STRING",
+            // sql standard, e.g. H2 and HSQLDB
+            "INTEGER ARRAY, INT", "BIGINT ARRAY, LONG", "DOUBLE PRECISION ARRAY, DOUBLE", "REAL ARRAY, FLOAT",
+            "'NUMERIC(10,2) ARRAY', DOUBLE", "BOOLEAN ARRAY, BOOLEAN", "CHARACTER VARYING ARRAY, STRING",
+            // hive and spark
+            "array<int>, INT", "array<bigint>, LONG", "array<string>, STRING", "'array<decimal(10,2)>', DOUBLE",
+            // unrecognised, e.g. an oracle user defined collection type
+            "MY_NUMBER_LIST, STRING", "ARRAY, STRING",
+    })
+    public void testParseArrayElementType(String typeName, Schema.Type expected) {
+        assertEquals(expected, generator.parseArrayElementType(typeName));
+    }
+
+    @Test
+    public void testParseArrayElementTypeWithoutTypeName() {
+        assertEquals(Schema.Type.STRING, generator.parseArrayElementType(null));
     }
 
     private LogicalType logicalType(int sqlType, int precision, int scale) {

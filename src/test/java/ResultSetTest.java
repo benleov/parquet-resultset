@@ -31,11 +31,13 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -53,8 +55,8 @@ public abstract class ResultSetTest {
     protected static final Integer[] ID_VALUES = {0, 1, 2, 3, 4, 5, 6};
 
     /**
-     * Column label, {@link Types} value, precision, scale, the value the driver returns, and the value expected
-     * to be read back.
+     * Column label, {@link Types} value, precision, scale, the value the driver returns, the value expected
+     * to be read back, and optionally the database type name and whether it is signed (default true).
      */
     protected static final Object[][] TYPED_COLUMNS = {
             {"bool_col", Types.BOOLEAN, 0, 0, true, true},
@@ -64,6 +66,11 @@ public abstract class ResultSetTest {
             {"smallint_col", Types.SMALLINT, 0, 0, 300, 300},
             {"integer_col", Types.INTEGER, 0, 0, 100000, 100000},
             {"bigint_col", Types.BIGINT, 0, 0, 10000000000L, 10000000000L},
+            // e.g. mysql UNSIGNED, where the largest values don't fit in the signed type
+            {"utinyint_col", Types.TINYINT, 0, 0, 255, 255, null, false},
+            {"uinteger_col", Types.INTEGER, 0, 0, 4294967295L, 4294967295L, null, false},
+            {"ubigint_col", Types.BIGINT, 0, 0, new BigDecimal("18446744073709551615"),
+                    new BigDecimal("18446744073709551615"), null, false},
             {"real_col", Types.REAL, 0, 0, 1.5f, 1.5f},
             {"float_col", Types.FLOAT, 0, 0, 2.25d, 2.25d},
             {"double_col", Types.DOUBLE, 0, 0, 3.125d, 3.125d},
@@ -80,7 +87,22 @@ public abstract class ResultSetTest {
             {"xml_col", Types.SQLXML, 0, 0, "<a/>", "<a/>"},
             {"uuid_col", Types.OTHER, 0, 0, "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
                     "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"},
-            {"array_col", Types.ARRAY, 0, 0, "{1,2,3}", "{1,2,3}"},
+            // array element types come from the type name: postgres, sql standard (H2, HSQLDB) and hive styles
+            {"int_array_col", Types.ARRAY, 0, 0, new Integer[]{1, null, 3}, Arrays.asList(1, null, 3), "_int4"},
+            {"bigint_array_col", Types.ARRAY, 0, 0, new long[]{10000000000L, 2L},
+                    Arrays.asList(10000000000L, 2L), "BIGINT ARRAY"},
+            {"float_array_col", Types.ARRAY, 0, 0, new Float[]{0.5f}, Arrays.asList(0.5f), "_float4"},
+            {"double_array_col", Types.ARRAY, 0, 0, new Double[]{2.5d}, Arrays.asList(2.5d), "array<double>"},
+            {"numeric_array_col", Types.ARRAY, 0, 0, new BigDecimal[]{new BigDecimal("1.5")}, Arrays.asList(1.5d),
+                    "_numeric"},
+            {"bool_array_col", Types.ARRAY, 0, 0, new Boolean[]{true, false}, Arrays.asList(true, false), "_bool"},
+            {"text_array_col", Types.ARRAY, 0, 0, new String[]{"a", "b"}, Arrays.asList("a", "b"), "_text"},
+            {"date_array_col", Types.ARRAY, 0, 0, new Date[]{Date.valueOf("2020-01-02")},
+                    Arrays.asList("2020-01-02"), "_date"},
+            {"nested_array_col", Types.ARRAY, 0, 0, new Object[]{new int[]{1, 2}, new String[]{"x"}},
+                    Arrays.asList("[1, 2]", "[x]"), null},
+            {"unknown_array_col", Types.ARRAY, 0, 0, new Object[]{1, "x"}, Arrays.asList("1", "x"), null},
+            {"empty_array_col", Types.ARRAY, 0, 0, new Integer[0], Collections.emptyList(), "_int4"},
             {"varbinary_col", Types.VARBINARY, 0, 0, new byte[]{1, 2, 3}, ByteBuffer.wrap(new byte[]{1, 2, 3})},
             {"blob_col", Types.BLOB, 0, 0, new byte[]{4, 5}, ByteBuffer.wrap(new byte[]{4, 5})},
             {"date_col", Types.DATE, 0, 0, Date.valueOf("2017-12-31"), LocalDate.of(2017, 12, 31)},
@@ -126,6 +148,7 @@ public abstract class ResultSetTest {
         when(metaData.getColumnCount()).thenReturn(1);
         when(metaData.getColumnName(1)).thenReturn(ID_FIELD_NAME);
         when(metaData.getColumnType(1)).thenReturn(Types.INTEGER);
+        when(metaData.isSigned(1)).thenReturn(true);
     }
 
     @AfterEach
@@ -250,6 +273,7 @@ public abstract class ResultSetTest {
         for (int x = 0; x < labels.length; x++) {
             when(namesMetaData.getColumnLabel(x + 1)).thenReturn(labels[x]);
             when(namesMetaData.getColumnType(x + 1)).thenReturn(x < 3 ? Types.INTEGER : Types.VARCHAR);
+            when(namesMetaData.isSigned(x + 1)).thenReturn(true);
         }
 
         List<Object[]> rows = new ArrayList<>();
@@ -263,6 +287,30 @@ public abstract class ResultSetTest {
         assertEquals(3, record.get("count___"));
         assertEquals("a", record.get("_1st").toString());
         assertEquals("b", record.get("first_name").toString());
+    }
+
+    /**
+     * A multi dimensional array of a non string type, e.g. a postgres int[][] which has the same type name as
+     * int[], can't be written as the element type and fails with a clear error.
+     */
+    @Test
+    public void testArrayOfArraysOfNumbersFails() throws SQLException {
+
+        String[] labels = {"matrix"};
+
+        ResultSetMetaData arrayMetaData = mock(ResultSetMetaData.class);
+        when(arrayMetaData.getColumnCount()).thenReturn(1);
+        when(arrayMetaData.getColumnLabel(1)).thenReturn(labels[0]);
+        when(arrayMetaData.getColumnType(1)).thenReturn(Types.ARRAY);
+        when(arrayMetaData.getColumnTypeName(1)).thenReturn("_int4");
+
+        List<Object[]> rows = new ArrayList<>();
+        rows.add(new Object[]{new Integer[][]{{1, 2}, {3, 4}}});
+
+        SQLException exception = assertThrows(SQLException.class, () -> createTransformer().transform(
+                FakeResultSet.create(arrayMetaData, labels, rows), SCHEMA_NAME, NAMESPACE));
+
+        assertTrue(exception.getMessage().contains("matrix"), exception.getMessage());
     }
 
     protected static ResultSet createTypedResultSet() throws SQLException {
@@ -281,6 +329,10 @@ public abstract class ResultSetTest {
             when(typedMetaData.getColumnType(x + 1)).thenReturn((Integer) TYPED_COLUMNS[x][1]);
             when(typedMetaData.getPrecision(x + 1)).thenReturn((Integer) TYPED_COLUMNS[x][2]);
             when(typedMetaData.getScale(x + 1)).thenReturn((Integer) TYPED_COLUMNS[x][3]);
+            when(typedMetaData.getColumnTypeName(x + 1))
+                    .thenReturn(TYPED_COLUMNS[x].length > 6 ? (String) TYPED_COLUMNS[x][6] : null);
+            when(typedMetaData.isSigned(x + 1))
+                    .thenReturn(TYPED_COLUMNS[x].length > 7 ? (Boolean) TYPED_COLUMNS[x][7] : true);
         }
 
         List<Object[]> rows = new ArrayList<>();
@@ -297,16 +349,28 @@ public abstract class ResultSetTest {
         for (Object[] column : TYPED_COLUMNS) {
 
             String name = (String) column[0];
-            Object actual = records.get(0).get(name);
 
-            // avro reads strings back as Utf8
-            if (actual instanceof CharSequence) {
-                actual = actual.toString();
-            }
-
-            assertEquals(column[5], actual, name);
+            assertEquals(column[5], normalise(records.get(0).get(name)), name);
             assertNull(records.get(1).get(name), name);
         }
+    }
+
+    /**
+     * Avro reads strings back as Utf8, including in arrays, so convert them to Strings.
+     */
+    private static Object normalise(Object value) {
+
+        if (value instanceof CharSequence) {
+            return value.toString();
+        }
+
+        if (value instanceof List) {
+            List<Object> list = new ArrayList<>();
+            ((List<?>) value).forEach(element -> list.add(normalise(element)));
+            return list;
+        }
+
+        return value;
     }
 
     /**

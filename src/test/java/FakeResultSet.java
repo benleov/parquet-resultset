@@ -1,5 +1,6 @@
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
+import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLFeatureNotSupportedException;
@@ -72,6 +73,8 @@ public final class FakeResultSet {
                         case "getDate":
                         case "getTime":
                             return value;
+                        case "getArray":
+                            return value == null ? null : createArray(value);
                         case "getTimestamp":
                             return value instanceof OffsetDateTime
                                     ? Timestamp.from(((OffsetDateTime) value).toInstant()) : value;
@@ -80,6 +83,26 @@ public final class FakeResultSet {
                                 throw new SQLFeatureNotSupportedException("getObject(int, Class)");
                             }
                             return value;
+                    }
+
+                    throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
+    /**
+     * @param elements A java array, which may be an array of primitives, returned by {@link Array#getArray()}.
+     */
+    private static Array createArray(Object elements) {
+
+        return (Array) Proxy.newProxyInstance(FakeResultSet.class.getClassLoader(), new Class[]{Array.class},
+                (proxy, method, args) -> {
+
+                    switch (method.getName()) {
+                        case "getArray":
+                            return elements;
+                        case "free":
+                            // some drivers don't support free
+                            throw new SQLFeatureNotSupportedException("free");
                     }
 
                     throw new UnsupportedOperationException(method.getName());

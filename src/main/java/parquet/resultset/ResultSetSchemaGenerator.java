@@ -61,9 +61,11 @@ public class ResultSetSchemaGenerator {
                 int sqlColumnType = resultSetMetaData.getColumnType(x);
                 int precision = resultSetMetaData.getPrecision(x);
                 int scale = resultSetMetaData.getScale(x);
+                boolean signed = isSigned(resultSetMetaData, x, sqlColumnType);
+                String typeName = sqlColumnType == Types.ARRAY ? resultSetMetaData.getColumnTypeName(x) : null;
                 String schemaName = uniqueName(toFieldName(columnName), usedNames);
 
-                Schema fieldSchema = parseFieldSchema(sqlColumnType, precision, scale);
+                Schema fieldSchema = parseFieldSchema(sqlColumnType, precision, scale, signed, typeName);
                 mappings.add(new SchemaSqlMapping(x, schemaName, columnName, sqlColumnType, fieldSchema));
                 fields.add(createNullableField(recordSchema, schemaName, fieldSchema));
             }
@@ -103,6 +105,23 @@ public class ResultSetSchemaGenerator {
     }
 
     /**
+     * Whether an INTEGER or BIGINT column is signed. Only those are affected, as unsigned TINYINT and SMALLINT
+     * (e.g. mysql UNSIGNED, sql server tinyint) still fit in an int. Assumes signed if the driver can't say.
+     */
+    private static boolean isSigned(ResultSetMetaData resultSetMetaData, int column, int sqlColumnType) {
+
+        if (sqlColumnType != Types.INTEGER && sqlColumnType != Types.BIGINT) {
+            return true;
+        }
+
+        try {
+            return resultSetMetaData.isSigned(column);
+        } catch (SQLException e) {
+            return true;
+        }
+    }
+
+    /**
      * Appends _2, _3 etc. to the name when it has already been used, e.g. for the two "id" columns of a join.
      */
     private static String uniqueName(String name, Set<String> usedNames) {
@@ -125,9 +144,103 @@ public class ResultSetSchemaGenerator {
      *     (e.g. oracle NUMBER, postgres numeric) or above {@link #MAX_DECIMAL_PRECISION}.</li>
      *     <li>DATE to date, TIME to time-millis, TIMESTAMP to local-timestamp-millis (no time zone) and
      *     TIMESTAMP_WITH_TIMEZONE to timestamp-millis (a UTC instant).</li>
+     *     <li>Unsigned INTEGER to LONG and unsigned BIGINT to decimal(20, 0), e.g. mysql INT UNSIGNED.</li>
      *     <li>Binary types and BLOB to BYTES, and BIT to BOOLEAN when it is a single bit.</li>
-     *     <li>Everything else, including CLOB, OTHER (e.g. postgres uuid and json) and ARRAY, to STRING.</li>
+     *     <li>ARRAY to an array of nullable elements, see {@link #parseArrayElementType(String)}.</li>
+     *     <li>Everything else, including CLOB and OTHER (e.g. postgres uuid and json), to STRING.</li>
      * </ul>
+     *
+     * @param sqlColumnType {@link java.sql.Types }
+     * @param precision     column precision from {@link ResultSetMetaData#getPrecision(int)}
+     * @param scale         column scale from {@link ResultSetMetaData#getScale(int)}
+     * @param signed        whether the column is signed, from {@link ResultSetMetaData#isSigned(int)}
+     * @param typeName      the database type name from {@link ResultSetMetaData#getColumnTypeName(int)}, which
+     *                      gives the element type of ARRAY columns. May be null.
+     * @return
+     */
+    public Schema parseFieldSchema(int sqlColumnType, int precision, int scale, boolean signed, String typeName) {
+
+        if (!signed && sqlColumnType == Types.INTEGER) {
+            return Schema.create(Schema.Type.LONG);         // up to 4,294,967,295
+        }
+
+        if (!signed && sqlColumnType == Types.BIGINT) {
+            return LogicalTypes.decimal(20, 0).addToSchema(Schema.create(Schema.Type.BYTES));  // up to 2^64 - 1
+        }
+
+        if (sqlColumnType == Types.ARRAY) {
+            Schema elementSchema = Schema.createUnion(
+                    Schema.create(parseArrayElementType(typeName)), Schema.create(Schema.Type.NULL));
+            return Schema.createArray(elementSchema);
+        }
+
+        return parseScalarSchema(sqlColumnType, precision, scale);
+    }
+
+    /**
+     * Converts the database type name of an ARRAY column into the schema type of its elements. JDBC has no
+     * standard way to get the element type, so this recognises the common forms of type name: postgres
+     * ("_int4", "_text"), the sql standard used by H2 and HSQLDB ("INTEGER ARRAY") and hive/spark
+     * ("array&lt;bigint&gt;"). Booleans, whole numbers and floating point numbers keep their type. Decimals are
+     * DOUBLE, as their scale is unknown, and anything else, including unrecognised type names, is STRING.
+     *
+     * @param typeName The database type name, may be null.
+     * @return
+     */
+    public Schema.Type parseArrayElementType(String typeName) {
+
+        if (typeName == null) {
+            return Schema.Type.STRING;
+        }
+
+        String name = typeName.trim().toLowerCase(Locale.ROOT);
+
+        if (name.startsWith("_")) {
+            name = name.substring(1);
+        } else if (name.endsWith(" array")) {
+            name = name.substring(0, name.length() - " array".length());
+        } else if (name.startsWith("array<") && name.endsWith(">")) {
+            name = name.substring("array<".length(), name.length() - 1);
+        } else {
+            return Schema.Type.STRING;
+        }
+
+        // remove any precision, e.g. numeric(10,2)
+        int bracket = name.indexOf('(');
+        name = (bracket >= 0 ? name.substring(0, bracket) : name).trim();
+
+        switch (name) {
+            case "bool":
+            case "boolean":
+                return Schema.Type.BOOLEAN;
+            case "int2":
+            case "int4":
+            case "tinyint":
+            case "smallint":
+            case "int":
+            case "integer":
+                return Schema.Type.INT;
+            case "int8":
+            case "bigint":
+                return Schema.Type.LONG;
+            case "float4":
+            case "real":
+                return Schema.Type.FLOAT;
+            case "float8":
+            case "float":
+            case "double":
+            case "double precision":
+            case "numeric":
+            case "decimal":
+                return Schema.Type.DOUBLE;
+            default:
+                return Schema.Type.STRING;
+        }
+    }
+
+    /**
+     * Converts sql column type to the schema of a field, for a signed column. ARRAY columns have string elements.
+     * See {@link #parseFieldSchema(int, int, int, boolean, String)}.
      *
      * @param sqlColumnType {@link java.sql.Types }
      * @param precision     column precision from {@link ResultSetMetaData#getPrecision(int)}
@@ -135,6 +248,10 @@ public class ResultSetSchemaGenerator {
      * @return
      */
     public Schema parseFieldSchema(int sqlColumnType, int precision, int scale) {
+        return parseFieldSchema(sqlColumnType, precision, scale, true, null);
+    }
+
+    private static Schema parseScalarSchema(int sqlColumnType, int precision, int scale) {
 
         switch (sqlColumnType) {
 
@@ -182,7 +299,7 @@ public class ResultSetSchemaGenerator {
             case Types.BLOB:
                 return Schema.create(Schema.Type.BYTES);    // sequence of bytes
 
-            default:                        // character types, CLOB, SQLXML, ROWID, OTHER, ARRAY etc.
+            default:                        // character types, CLOB, SQLXML, ROWID, OTHER, STRUCT etc.
                 return Schema.create(Schema.Type.STRING);   // unicode string
         }
     }

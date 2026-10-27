@@ -6,8 +6,11 @@ import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.io.LocalInputFile;
+import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.LogicalTypeAnnotation;
 import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.PrimitiveType;
+import org.apache.parquet.schema.Type;
 import org.junit.jupiter.api.Test;
 import parquet.resultset.ResultSetTransformer;
 import parquet.resultset.impl.ResultSetParquetTransformer;
@@ -75,6 +78,17 @@ public class ResultSetParquetTransformerTest extends ResultSetTest {
         assertEquals(LogicalTypeAnnotation.timestampType(true, LogicalTypeAnnotation.TimeUnit.MILLIS),
                 logicalType(schema, "timestamptz_col"));
         assertEquals(LogicalTypeAnnotation.stringType(), logicalType(schema, "varchar_col"));
+        assertEquals(LogicalTypeAnnotation.decimalType(0, 20), logicalType(schema, "ubigint_col"));
+
+        // arrays use the standard 3 level list: optional group (LIST) { repeated group list { optional element } }
+        assertEquals(LogicalTypeAnnotation.listType(), logicalType(schema, "int_array_col"));
+        GroupType list = schema.getType("int_array_col").asGroupType();
+        GroupType repeated = list.getType(0).asGroupType();
+        assertEquals("list", repeated.getName());
+        assertEquals(Type.Repetition.REPEATED, repeated.getRepetition());
+        assertEquals(Type.Repetition.OPTIONAL, repeated.getType("element").getRepetition());
+        assertEquals(PrimitiveType.PrimitiveTypeName.INT32,
+                repeated.getType("element").asPrimitiveType().getPrimitiveTypeName());
     }
 
     private static LogicalTypeAnnotation logicalType(MessageType schema, String fieldName) {

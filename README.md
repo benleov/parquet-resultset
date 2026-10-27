@@ -73,6 +73,8 @@ Every field is nullable. SQL NULLs are written as nulls, including for numeric a
 | BOOLEAN, BIT | boolean (BIT(n) with more than one bit: bytes) |
 | TINYINT, SMALLINT, INTEGER | int |
 | BIGINT | long |
+| Unsigned INTEGER, e.g. MySQL `INT UNSIGNED` | long |
+| Unsigned BIGINT | decimal(20, 0) |
 | REAL | float |
 | FLOAT, DOUBLE | double |
 | NUMERIC, DECIMAL with scale 0 | int up to precision 9, long up to 18, then decimal |
@@ -83,7 +85,16 @@ Every field is nullable. SQL NULLs are written as nulls, including for numeric a
 | TIMESTAMP | local-timestamp-millis (no time zone) |
 | TIMESTAMP_WITH_TIMEZONE | timestamp-millis (UTC) |
 | BINARY, VARBINARY, LONGVARBINARY, BLOB | bytes |
-| Everything else, e.g. CHAR, VARCHAR, CLOB, SQLXML, OTHER (Postgres `uuid`, `json`), ARRAY | string |
+| ARRAY | array (a Parquet LIST) of nullable elements, see below |
+| Everything else, e.g. CHAR, VARCHAR, CLOB, SQLXML, OTHER (Postgres `uuid`, `json`) | string |
+
+JDBC doesn't report the element type of an ARRAY column, so it's taken from the column's type name. The forms
+used by Postgres (`_int4`), the SQL standard (`INTEGER ARRAY`, used by H2 and HSQLDB) and Hive/Spark
+(`array<int>`) are recognised. Booleans, ints, longs, floats and doubles keep their type, decimals become
+doubles, and everything else, including unrecognised type names, becomes strings (e.g. dates are written as
+`2020-01-02`). Elements of multi-dimensional arrays are written as strings such as `[1, 2]` when the element
+type is a string. For numeric types, e.g. a Postgres `int[][]` (which has the same type name as `int[]`), they
+fail with an error.
 
 Field names are the column labels (the `AS` alias), lower cased. Characters other than letters, digits and
 underscores are replaced with underscores, e.g. `COUNT(*)` becomes `count___`, and repeated names (e.g. the `id`
