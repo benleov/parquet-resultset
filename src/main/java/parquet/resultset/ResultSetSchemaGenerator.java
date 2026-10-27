@@ -26,12 +26,13 @@ public class ResultSetSchemaGenerator {
     public static final int MAX_DECIMAL_PRECISION = 38;
 
     /**
-     * Generates parquet schema using {@link ResultSetMetaData }
+     * Generates an avro record schema, with a nullable field for each column, using {@link ResultSetMetaData }.
+     * Parquet files are written from the same schema.
      *
-     * @param resultSet
-     * @param name Record name.
-     * @param nameSpace
-     * @return
+     * @param resultSet The result set, which is not read. May be null, for a schema with no fields.
+     * @param name      Record name.
+     * @param nameSpace Record namespace.
+     * @return The schema and the mapping of each column to its field.
      * @throws SQLException
      */
     public SchemaResults generateSchema(ResultSet resultSet, String name, String nameSpace) throws SQLException {
@@ -335,9 +336,8 @@ public class ResultSetSchemaGenerator {
     }
 
     /**
-     * Converts sql column type to schema type. See {@link java.sql.Types } and {@link Schema.Type } for more details.
-     *
-     * https://www.cis.upenn.edu/~bcpierce/courses/629/jdkdocs/guide/jdbc/getstart/mapping.doc.html
+     * Converts sql column type to schema type, for a column with unknown precision and scale. See
+     * {@link #parseFieldSchema(int, int, int)} for the full mapping.
      *
      * @param sqlColumnType
      * @return

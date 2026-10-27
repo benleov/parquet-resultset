@@ -1,8 +1,8 @@
 # parquet-resultset
 
 The parquet-resultset library can be used to convert a standard SQL 
-[ResultSet](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html) into 
-[Parquet](https://parquet.apache.org/), or  [Avro](https://avro.apache.org/)
+[ResultSet](https://docs.oracle.com/en/java/javase/11/docs/api/java.sql/java/sql/ResultSet.html) into
+[Parquet](https://parquet.apache.org/) or [Avro](https://avro.apache.org/).
 
 For example
 
@@ -43,7 +43,8 @@ For example
 
 The output can be written out to anywhere, i.e a file or S3, which can then be queried by 
 [Athena](https://aws.amazon.com/athena/). Only the current row (and for parquet, the current row group) is held
-in memory.
+in memory. Some drivers read the whole result set into memory by default, e.g. Postgres needs auto commit off and
+a fetch size (`statement.setFetchSize(1000)`), and MySQL needs `useCursorFetch=true` with a fetch size.
 
 `transform` can also return an `InputStream` instead, without the listeners if they are not needed. It writes to
 a temp file, which is deleted when the stream is closed:
@@ -119,4 +120,5 @@ Using the library requires Java 11 or later. Building it requires JDK 17 or late
 
 ## License
 
-This project is Open Source software released under the https://www.apache.org/licenses/LICENSE-2.0.html[Apache 2.0 license].
+This project is Open Source software released under the
+[Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0.html).

@@ -34,8 +34,9 @@ import java.util.List;
 public interface ResultSetTransformer {
 
     /**
-     * Transforms the result set and writes it to the output stream. The output stream is flushed but not closed,
-     * and nothing is held in memory or written to disk other than the current row.
+     * Transforms the result set and writes it to the output stream. The output stream is flushed but not closed.
+     * Nothing is written to disk, and only the current row (and for parquet, the current row group) is held in
+     * memory.
      *
      * @param resultSet    The resultset to transform.
      * @param schemaName   Schema name.
